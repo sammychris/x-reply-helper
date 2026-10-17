@@ -1,4 +1,4 @@
-SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.1.0
+SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.2.0
 
 WHAT IT DOES
 - Adds a "Reply ideas" button under every post on x.com.
@@ -90,3 +90,21 @@ CHANGES IN 2.1
   Turning Reply on for a post with no reply sends it back to the queue: press Write replies.
 - Speed: "Finish the batch in X minutes" (default 10). Every gap is different but the batch ends on time.
   If the time is too short, it says the fastest possible time (about 5 s per post). Or use "Gap between posts".
+
+CHANGES IN 2.2
+- Runs in the extension's background: you can close or hide the control center and it keeps going.
+  Keep Chrome open and the small working window on screen (not minimised).
+- Posting order: open the post → wait on it (every wait different) → like / repost / reply → straight to the next.
+- Moves between posts inside X (like tapping a post) instead of reloading the page each time; falls back to a
+  normal page load if that ever fails.
+- Never replies twice: if your reply is already under a post (you replied by hand, or Chrome stopped mid-way),
+  the reply is skipped and marked "already replied".
+- X's "rate limit" page is recognised: Autopilot pauses and tells you to wait.
+- "Leave out ads" and "Leave out my own posts" now work even with filters off (switch them off if you want them).
+- Chat start point keeps working when you scroll: if it can't find where it left off, it asks you to scroll back.
+- On x.com everything is in one 🤖 button (bottom left, shows replies today). Tap it for the menu.
+  On phone-sized windows it sits above X's bottom bar. Hidden in the working window.
+- Control center works at phone width.
+- "AI calls today" counter at the top (watch Gemini's free daily limit).
+- Video frames are only grabbed when the post's text doesn't explain the video, and dropped after use.
+- Replies read for context skip ads and your own replies. AI requests time out after 45 s instead of hanging.

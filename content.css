@@ -23,3 +23,23 @@
 .ap-plus { background: none; border: 0; cursor: pointer; font-size: 14px; margin-left: 6px; opacity: .75; }
 .ap-plus:hover { opacity: 1; }
 .ap-toast { position: fixed; bottom: 100px; left: 16px; z-index: 10000; max-width: 420px; background: #1d9bf0; color: #fff; padding: 10px 14px; border-radius: 12px; font: 14px/1.4 system-ui, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+
+/* v2.2: one 🤖 button that opens a menu, clear of X's own buttons */
+#ap-dock { position: fixed; left: 16px; bottom: 16px; z-index: 9999; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; max-width: calc(100vw - 32px); }
+#ap-dock #ap-bar { position: static; display: none; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; border-radius: 14px; background: rgba(0,0,0,.88); border: 1px solid #2f3336; }
+#ap-dock.open #ap-bar { display: flex; }
+#ap-dock #srh-badge { position: static; display: none; }
+#ap-dock.open #srh-badge { display: block; }
+#ap-dock #srh-batch, #ap-dock #srh-pick { position: static; text-align: left; }
+#ap-dock .ap-fbtn { text-align: left; }
+#ap-toggle { border: 0; padding: 7px 14px; border-radius: 999px; background: #1d9bf0; color: #fff; font: 700 14px system-ui, sans-serif; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+#ap-dock.open #ap-toggle { background: #536471; }
+#srh-picker { width: min(460px, calc(100vw - 32px)); bottom: 70px; }
+@media (max-width: 700px) {
+  /* X's phone layout has a menu bar along the bottom: sit above it */
+  #ap-dock { bottom: 72px; left: 10px; }
+  #srh-picker { bottom: 125px; left: 10px; max-height: 60vh; }
+  .ap-toast { bottom: 130px; left: 10px; right: 10px; max-width: none; }
+}
+/* the working window is driven by Autopilot: hide everything the extension adds there */
+html.ap-worker #ap-dock, html.ap-worker .srh-btn, html.ap-worker .ap-plus, html.ap-worker #srh-picker, html.ap-worker .srh-panel, html.ap-worker #srh-badge, html.ap-worker #srh-batch, html.ap-worker #srh-pick { display: none !important; }

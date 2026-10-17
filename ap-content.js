@@ -60,13 +60,13 @@
   }
 
   // Returns the reason to leave a post out, or "" to keep it.
-  // Only "already done" always applies; every other filter runs only if you turned it on.
+  // "Already done", ads and your own posts (both switchable) always apply; the rest only with "Use filters" on.
   function skipReason(info, s, rules) {
     if (rules.known.has(info.id)) return "already in queue or done";
-    if (!s.useFilters) return "";
     const f = s.filters, h = info.handle.toLowerCase();
     if (f.ads && info.isAd) return "ad";
     if (f.own && h === rules.me) return "your own post";
+    if (!s.useFilters) return "";
     if (f.accounts && rules.skipAcc.has(h)) return "skip list";
     if (f.types && !s.types[info.type]) return info.type + " posts are off";
     if (f.age && s.maxAgeHours && info.time && Date.now() - Date.parse(info.time) > s.maxAgeHours * 3600e3) return "too old";
@@ -128,24 +128,46 @@
     return { added: items.length, skipped };
   }
 
-  // ---------- floating buttons ----------
+  // ---------- one 🤖 button (bottom left) that opens a small menu ----------
+  // Everything the extension adds to x.com lives in this menu, so nothing covers X's own buttons.
+  const dock = Object.assign(document.createElement("div"), { id: "ap-dock" });
+  const toggle = Object.assign(document.createElement("button"), { id: "ap-toggle", textContent: "🤖" });
   const bar = Object.assign(document.createElement("div"), { id: "ap-bar" });
-  const apBtn = Object.assign(document.createElement("button"), { className: "ap-fbtn", textContent: "🤖 Collect" });
-  const centerBtn = Object.assign(document.createElement("button"), { className: "ap-fbtn ap-dark", textContent: "Control center" });
+  dock.append(bar, toggle);
+  document.body.appendChild(dock);
+  let open = false;
+  try { open = sessionStorage.getItem("apMenu") === "1"; } catch (_) {}
+  const setOpen = v => { open = v; dock.classList.toggle("open", v); try { sessionStorage.setItem("apMenu", v ? "1" : "0"); } catch (_) {} };
+  setOpen(open);
+  toggle.onclick = () => setOpen(!open);
+  const mk = (text, cls = "") => Object.assign(document.createElement("button"), { className: "ap-fbtn " + cls, textContent: text });
+  const apBtn = mk("🤖 Collect posts on this page");
+  const centerBtn = mk("Control center", "ap-dark");
   bar.append(apBtn, centerBtn);
-  document.body.appendChild(bar);
+  // the older helper's buttons (reply counter, Draft next 10, Pick a post) move into the same menu
+  const adopt = () => {
+    const badge = document.getElementById("srh-badge");
+    if (badge && badge.parentNode !== dock) { dock.insertBefore(badge, bar); new MutationObserver(() => { toggle.textContent = "🤖 " + (badge.textContent.match(/\d+\s*\/\s*\d+/) || [""])[0].replace(/\s/g, ""); }).observe(badge, { childList: true, characterData: true, subtree: true }); }
+    for (const id of ["srh-batch", "srh-pick"]) { const b = document.getElementById(id); if (b && b.parentNode !== bar) bar.append(b); }
+  };
+  adopt(); setTimeout(adopt, 500);
 
   apBtn.onclick = async () => {
     if (collecting) { collecting = false; apBtn.textContent = "Stopping…"; return; }
     const s = await apSettings();
-    apBtn.textContent = `Collecting 0/${s.batchSize} · stop`;
-    const r = await collect(s.batchSize, (f, n) => { apBtn.textContent = `Collecting ${f}/${n} · stop`; });
-    apBtn.textContent = "🤖 Collect";
+    const label = (f, n) => { apBtn.textContent = `Collecting ${f}/${n} · tap to stop`; toggle.textContent = `🤖 ${f}/${n}`; };
+    label(0, s.batchSize);
+    const r = await collect(s.batchSize, label);
+    apBtn.textContent = "🤖 Collect posts on this page";
+    adopt();
     if (r.stopped) return;
     const sk = Object.entries(r.skipped).map(([k, v]) => `${v} ${k}`).join(", ");
-    toast(`Added ${r.added} posts to the queue.` + (sk ? ` Skipped: ${sk}.` : ""), 6000);
+    toast(`Added ${r.added} posts to the queue.` + (sk ? ` Left out: ${sk}.` : ""), 6000);
   };
   centerBtn.onclick = () => chrome.runtime.sendMessage({ type: "apOpen", focus: true });
+
+  // In the working window, hide everything the extension adds: Autopilot drives that window.
+  chrome.runtime.sendMessage({ type: "apWhoAmI" }).then(r => { if (r?.worker) document.documentElement.classList.add("ap-worker"); }).catch(() => {});
 
   // ---------- ➕ on every post ----------
   function addPlus(article) {
@@ -174,26 +196,31 @@
   const chatKey = () => location.pathname.replace(/\/+$/, "");
   const chatRoot = () => document.querySelector('[data-testid="DmActivityViewport"], [data-testid="DMConversation"]') || document.querySelector('[role="main"]') || document.body;
 
+  // Every post link in the chat, in the order it appears on screen (links and plain-text links).
   function linksIn(root) {
     const out = [], ids = new Set();
     for (const el of root.querySelectorAll("a")) {
       const m = (el.getAttribute("href") || "").match(STATUS_RE) || (el.innerText || "").match(STATUS_RE) || (el.title || "").match(STATUS_RE);
       if (!m || ids.has(m[2])) continue;
       ids.add(m[2]);
-      out.push({ el, handle: m[1], id: m[2] });
+      out.push({ node: el, handle: m[1], id: m[2] });
     }
-    // links typed as plain text (not turned into a link)
-    const text = root.innerText || "";
-    for (const m of text.matchAll(new RegExp(STATUS_RE.source, "gi"))) {
-      if (!ids.has(m[2])) { ids.add(m[2]); out.push({ el: null, handle: m[1], id: m[2] }); }
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (n.parentElement?.closest("a, #ap-dock")) continue;
+      for (const m of (n.textContent || "").matchAll(new RegExp(STATUS_RE.source, "gi"))) {
+        if (!ids.has(m[2])) { ids.add(m[2]); out.push({ node: n, handle: m[1], id: m[2] }); }
+      }
     }
-    return out;
+    return out.sort((a, b) => (a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   }
+  const msgEntries = root => [...root.querySelectorAll('[data-testid="messageEntry"]')];
+  const sigOf = el => (el?.innerText || "").trim().slice(0, 80);
   async function getChats() { return (await chrome.storage.local.get("apChats")).apChats || {}; }
 
-  const startBtn = Object.assign(document.createElement("button"), { className: "ap-fbtn ap-dark", textContent: "📍 Set start point" });
-  const grabBtn = Object.assign(document.createElement("button"), { className: "ap-fbtn", textContent: "🔗 Grab new links" });
-  bar.append(startBtn, grabBtn);
+  const startBtn = mk("📍 Set start point", "ap-dark");
+  const grabBtn = mk("🔗 Grab new links");
+  bar.prepend(startBtn, grabBtn);
   const showChatButtons = () => {
     const on = isChat();
     startBtn.style.display = grabBtn.style.display = on ? "" : "none";
@@ -202,39 +229,64 @@
   setInterval(showChatButtons, 1000);
   showChatButtons();
 
+  // The start point is remembered by the links around it, not by where they sit on screen:
+  // X only keeps part of a long chat loaded, so positions change as you scroll.
+  //   before  = links older than the start point (never taken)
+  //   after   = links at/after the start point that we've seen (used to find our place again)
+  //   grabbed = links already sent to the queue
   let picking = false;
   startBtn.onclick = () => {
     picking = !picking;
-    startBtn.textContent = picking ? "Click the first message to start from (or here to cancel)" : "📍 Set start point";
+    startBtn.textContent = picking ? "Now click the first message to start from (tap here to cancel)" : "📍 Set start point";
   };
   document.addEventListener("click", async e => {
-    if (!picking || e.target.closest("#ap-bar")) return;
+    if (!picking || e.target.closest("#ap-dock")) return;
     e.preventDefault(); e.stopPropagation();
     picking = false;
     startBtn.textContent = "📍 Set start point";
     const clicked = e.target.closest('[data-testid="messageEntry"]') || e.target;
     const links = linksIn(chatRoot());
-    const older = links.filter(l => l.el && !clicked.contains(l.el) && (clicked.compareDocumentPosition(l.el) & Node.DOCUMENT_POSITION_PRECEDING));
+    const isBefore = l => !clicked.contains(l.node) && (clicked.compareDocumentPosition(l.node) & Node.DOCUMENT_POSITION_PRECEDING);
     const chats = await getChats();
-    chats[chatKey()] = { seen: older.map(l => l.id), setAt: new Date().toISOString() };
+    chats[chatKey()] = { before: links.filter(isBefore).map(l => l.id), after: links.filter(l => !isBefore(l)).map(l => l.id), grabbed: [], sig: sigOf(clicked), setAt: new Date().toISOString() };
     await chrome.storage.local.set({ apChats: chats });
-    toast(`Start point set. ${older.length} older links will be ignored. Press "Grab new links" when you're ready.`, 6000);
+    toast(`Start point set. ${chats[chatKey()].before.length} older links will be ignored. Press "Grab new links" whenever you want.`, 6000);
   }, true);
 
   grabBtn.onclick = async () => {
     const chats = await getChats();
     let chat = chats[chatKey()];
-    if (!chat && !confirm("No start point set for this chat yet. Grab every post link you can see?")) return;
-    chat = chat || { seen: [] };
-    const seen = new Set(chat.seen);
+    if (chat && chat.seen && !chat.before) chat = { before: chat.seen, after: [], grabbed: [] }; // start point from v2.1
+    const root = chatRoot();
+    const links = linksIn(root);
+    let from = 0; // index in links where new ones start
+    if (!chat) {
+      if (!confirm("No start point set for this chat yet. Grab every post link you can see?")) return;
+      chat = { before: [], after: [], grabbed: [] };
+    } else {
+      const before = new Set(chat.before), after = new Set([...chat.after, ...chat.grabbed]);
+      // 1) the start message itself, or the last older link, if they're on screen
+      const startMsg = chat.sig ? msgEntries(root).find(m => sigOf(m) === chat.sig) : null;
+      let cut = -1;
+      links.forEach((l, i) => { if (before.has(l.id) || (startMsg && (startMsg.compareDocumentPosition(l.node) & Node.DOCUMENT_POSITION_PRECEDING))) cut = i; });
+      if (cut >= 0) from = cut + 1;
+      else {
+        // 2) otherwise the first link we already know is after the start point
+        const firstKnown = links.findIndex(l => after.has(l.id));
+        if (firstKnown >= 0) from = firstKnown;
+        else if (links.length) { toast("I can't see where the start point or your last grab is. Scroll the chat so your last grabbed links (or the start point) are on screen, then press Grab again.", 8000); return; }
+      }
+    }
+    const grabbedSet = new Set(chat.grabbed), beforeSet = new Set(chat.before);
+    const fresh = links.slice(from).filter(l => !grabbedSet.has(l.id) && !beforeSet.has(l.id));
     const known = await knownIds();
-    const fresh = linksIn(chatRoot()).filter(l => !seen.has(l.id));
     const s = await apSettings();
     const items = fresh.filter(l => !known.has(l.id)).map(l => ({
       id: l.id, handle: l.handle, url: `https://x.com/${l.handle}/status/${l.id}`, text: "", type: "", source: "group", actions: { ...s.defaultActions.group }
     }));
-    fresh.forEach(l => seen.add(l.id));
-    chats[chatKey()] = { ...chat, seen: [...seen].slice(-3000) };
+    chat.grabbed = [...new Set([...chat.grabbed, ...fresh.map(l => l.id)])].slice(-5000);
+    chat.after = [...new Set([...chat.after, ...links.slice(from).map(l => l.id)])].slice(-5000);
+    chats[chatKey()] = chat;
     await chrome.storage.local.set({ apChats: chats });
     await sendToQueue(items);
     toast(items.length ? `Grabbed ${items.length} new links.` + (fresh.length > items.length ? ` ${fresh.length - items.length} were already done.` : "") : "No new links since last time.", 5000);
@@ -249,8 +301,9 @@
       const a = focal(id);
       if (a) return a;
       if (/\/(login|i\/flow)/.test(location.pathname)) throw new Error("login: X wants you to log in again in the working window.");
-      const body = document.body.innerText;
-      if (/this post (was deleted|is unavailable)|hmm\.\.\.this page doesn.t exist|post you.re looking for/i.test(body)) throw new Error("gone: this post was deleted or isn't available.");
+      const body = document.querySelector('[role="main"]')?.innerText || document.body.innerText;
+      if (/rate limit exceeded|you are rate limited|too many requests/i.test(body)) throw new Error("ratelimit: X says you've hit its rate limit.");
+      if (/this post (was deleted|is unavailable)|hmm\.\.\.this page doesn.t exist|post you.re looking for|account (is|has been) suspended|these posts are protected/i.test(body)) throw new Error("gone: this post was deleted or isn't available.");
       await sleep(300);
     }
     throw new Error("Couldn't find the post on the page.");
@@ -288,7 +341,8 @@
     const alts = imgs.map(i => (i.alt || "").trim()).filter(t => t && t.toLowerCase() !== "image");
     const poster = a.querySelector("video")?.getAttribute("poster");
     if (poster && poster.startsWith("https://pbs.twimg.com/")) images.push(poster.replace(/name=\w+/, "name=small"));
-    const frames = opts.frames && info.type === "video" ? await grabFrames(a) : [];
+    // Frames only when the post's own words don't already explain the video (saves time and AI cost).
+    const frames = opts.frames && info.type === "video" && (texts[0] || "").length < 120 && !alts.length ? await grabFrames(a) : [];
     let replies = [];
     if (opts.readReplies) {
       for (let i = 0; i < 3 && replies.length < 10; i++) {
@@ -296,7 +350,9 @@
         await sleep(1200);
         const all = [...document.querySelectorAll('article[data-testid="tweet"]')];
         const start = all.indexOf(focal(id));
-        replies = all.slice(start + 1).map(r => r.querySelector('[data-testid="tweetText"]')?.innerText || "").filter(t => t.trim().length > 2).slice(0, 10);
+        replies = all.slice(start + 1)
+          .filter(r => { const i = articleInfo(r); return i && !i.isAd && i.handle.toLowerCase() !== (opts.me || ""); }) // no ads, not your own replies
+          .map(r => r.querySelector('[data-testid="tweetText"]')?.innerText || "").filter(t => t.trim().length > 2).slice(0, 10);
       }
       window.scrollTo(0, 0);
     }
@@ -361,9 +417,25 @@
     return { ok: false, error: "X didn't confirm the reply was sent." };
   }
 
+  // Is there already a reply from you under this post? (You replied by hand, or a reply went out
+  // just before Chrome stopped.) Then the reply is not sent again.
+  async function alreadyReplied(a, me) {
+    if (!me) return false;
+    for (let t = 0; t < 2500; t += 500) {
+      const all = [...document.querySelectorAll('article[data-testid="tweet"]')];
+      const after = all.slice(all.indexOf(a) + 1, all.indexOf(a) + 40);
+      if (after.some(r => articleInfo(r)?.handle.toLowerCase() === me)) return true;
+      if (after.length) return false;
+      await sleep(500); // replies still loading
+    }
+    return false;
+  }
+
   async function act(id, want) {
     const a = await waitFocal(id);
     const done = { like: false, repost: false, reply: false };
+    let already = false;
+    if (want.reply && location.pathname.includes("/status/" + id) && await alreadyReplied(a, want.me)) { already = true; want = { ...want, reply: "" }; done.reply = true; }
     if (want.like) done.like = await like(a);
     if (want.like && xError()) return { ok: false, done, xError: xError() };
     if (want.repost) done.repost = await repost(a);
@@ -374,7 +446,7 @@
       done.reply = true;
     }
     const failed = Object.keys(done).filter(k => want[k] && !done[k]);
-    return failed.length ? { ok: false, done, error: "Couldn't " + failed.join(" / ") + " this post." } : { ok: true, done };
+    return failed.length ? { ok: false, done, error: "Couldn't " + failed.join(" / ") + " this post." } : { ok: true, done, already };
   }
 
   // Grok: press the post's Grok button, ask it to explain, and read the answer. Experimental: X changes this often.
@@ -401,7 +473,23 @@
     return last.length > 120 ? { ok: true, text: last.slice(0, 1500) } : { ok: false, error: "Grok didn't answer in time." };
   }
 
+  // Move to another post inside X, the way tapping a post does (no full page reload).
+  async function nav(url, id) {
+    const path = new URL(url).pathname;
+    if (location.pathname !== path) {
+      history.pushState(null, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    }
+    for (let t = 0; t < 8000; t += 250) {
+      if (location.pathname === path && focal(id)) { window.scrollTo(0, 0); return { ok: true }; }
+      try { await waitFocal(id, 1); } catch (e) { if (/^(login|gone|ratelimit)/.test(e.message)) return { ok: false, error: e.message }; }
+      await sleep(250);
+    }
+    return { ok: false };
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg.type === "apNav") { nav(msg.url, msg.id).then(sendResponse, () => sendResponse({ ok: false })); return true; }
     const reply = p => p.then(v => sendResponse({ ok: true, ...v }), e => sendResponse({ ok: false, error: e.message }));
     if (msg.type === "apPing") { sendResponse({ ok: true }); return; }
     if (msg.type === "apRead") { reply(readPost(msg.id, msg.opts || {}).then(post => ({ post }))); return true; }

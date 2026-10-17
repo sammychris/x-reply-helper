@@ -35,6 +35,7 @@ async function claude(k, model, system, text, media, maxTokens) {
   content.push({ type: "text", text });
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
+    signal: AbortSignal.timeout(45000), // never wait forever on a stuck request
     headers: {
       "content-type": "application/json",
       "x-api-key": k.apiKey,
@@ -50,7 +51,7 @@ async function claude(k, model, system, text, media, maxTokens) {
 
 async function toInline(m) {
   if (m.data) return { mime_type: m.data.slice(5, m.data.indexOf(";")), data: m.data.split(",")[1] };
-  const res = await fetch(m.url);
+  const res = await fetch(m.url, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error("image fetch failed");
   const mime = (res.headers.get("content-type") || "image/jpeg").split(";")[0];
   const bytes = new Uint8Array(await res.arrayBuffer());
@@ -72,7 +73,7 @@ async function gemini(k, system, text, media, maxTokens) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(k.geminiModel)}:generateContent`;
   let lastErr;
   for (let i = 0; i < 4; i++) {
-    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": k.geminiKey }, body }).catch(e => ({ ok: false, status: 0, json: async () => ({ error: { message: e.message } }) }));
+    const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(45000), headers: { "content-type": "application/json", "x-goog-api-key": k.geminiKey }, body }).catch(e => ({ ok: false, status: 0, json: async () => ({ error: { message: e.message } }) }));
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       const out = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
@@ -87,6 +88,18 @@ async function gemini(k, system, text, media, maxTokens) {
   throw lastErr;
 }
 
+// How many AI calls today (shown in the control center, so you can watch Gemini's free daily limit).
+let usageChain = Promise.resolve();
+function countCall(who) {
+  usageChain = usageChain.then(async () => { // one at a time, so parallel calls aren't lost
+    const day = new Date().toISOString().slice(0, 10);
+    const { apUsage = {} } = await chrome.storage.local.get("apUsage");
+    const u = apUsage[day] || { gemini: 0, claude: 0 };
+    u[who]++;
+    await chrome.storage.local.set({ apUsage: { [day]: u } }); // only today is kept
+  }).catch(() => {});
+}
+
 // Use the AI you picked; if it has no key or fails, try the other one.
 async function run(pick, role, system, text, media, maxTokens) {
   const k = await keys();
@@ -97,6 +110,7 @@ async function run(pick, role, system, text, media, maxTokens) {
       const out = who === "claude"
         ? await claude(k, role === "reviewer" ? k.reviewerModel : k.model, system, text, media, maxTokens)
         : await gemini(k, system, text, media, maxTokens);
+      countCall(who);
       return { out, via: who === "claude" ? "Claude" : "Gemini" };
     } catch (e) {
       lastErr = e;

@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="autopilot.css">
 </head><body>
 <header>
-  <div class="brand">🤖 Autopilot <span id="count" class="pill"></span></div>
+  <div class="brand">🤖 Autopilot <span id="count" class="pill"></span> <span id="usage" class="pill"></span></div>
   <div id="status" class="status">Idle</div>
   <div class="actions">
     <button id="collectBtn" class="ghost" title="Collect more posts from the X tab you last collected from">Collect more</button>
@@ -32,7 +32,7 @@
     <details open>
       <summary>Filters for Collect</summary>
       <label class="check big"><input type="checkbox" data-k="useFilters"> Use filters</label>
-      <p class="hint">Off: Collect takes every post on the page and you remove what you don't want on the review screen. Posts you already did are always left out.</p>
+      <p class="hint">Off: Collect takes every post on the page and you remove what you don't want on the review screen. Posts you already did are always left out, and so are the two below if ticked.</p>
       <div id="filterBox">
         <label class="check"><input type="checkbox" data-k="filters.age"> Leave out posts older than</label>
         <div class="row two"><label>hours <input type="number" min="0" data-k="maxAgeHours"></label></div>
@@ -51,10 +51,11 @@
           <label class="check"><input type="checkbox" data-k="types.image"> Image</label>
           <label class="check"><input type="checkbox" data-k="types.video"> Video</label>
         </div>
-        <label class="check"><input type="checkbox" data-k="filters.ads"> Leave out ads</label>
-        <label class="check"><input type="checkbox" data-k="filters.own"> Leave out my own posts</label>
-        <label>Your handle <input data-k="myHandle"></label>
       </div>
+      <h4>Always (even with filters off)</h4>
+      <label class="check"><input type="checkbox" data-k="filters.ads"> Leave out ads</label>
+      <label class="check"><input type="checkbox" data-k="filters.own"> Leave out my own posts</label>
+      <label>Your handle <input data-k="myHandle"></label>
       <label class="check"><input type="checkbox" data-k="favFirst"> Put favourites first</label>
       <input data-k="favAccounts" placeholder="Favourites: @name, @name">
     </details>
@@ -68,7 +69,7 @@
       <summary>Speed</summary>
       <label class="check"><input type="radio" name="pace" value="finish"> Finish the batch in a set time</label>
       <div class="row two"><label>minutes <input type="number" min="1" step="1" data-k="finishMinutes"></label></div>
-      <label class="check"><input type="radio" name="pace" value="gap"> Gap between posts</label>
+      <label class="check"><input type="radio" name="pace" value="gap"> Wait a set time on each post</label>
       <div class="row two">
         <label>from (sec) <input type="number" min="2" data-k="minGap"></label>
         <label>to (sec) <input type="number" min="2" data-k="maxGap"></label>
@@ -77,7 +78,7 @@
         <label>rest after every <input type="number" min="1" data-k="restEvery"></label>
         <label>rest for (min) <input type="number" min="0" step="0.5" data-k="restMinutes"></label>
       </div>
-      <p class="hint">Either way the gap changes from post to post. If X shows an error, it rests 10 minutes and slows down; a second error pauses it.</p>
+      <p class="hint">It opens each post, waits on it (every wait different), then likes / reposts / replies and moves straight to the next. If X shows an error it rests 10 minutes and slows down; a second error or X's rate limit pauses it.</p>
     </details>
 
     <details>

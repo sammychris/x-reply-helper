@@ -80,3 +80,33 @@ input[type="radio"] { width: auto; margin: 0 6px 0 0; accent-color: var(--blue);
 .pace b { color: var(--text); }
 .pace input { width: 70px; margin: 0; padding: 4px 8px; }
 .pace .warnc { color: var(--amber); }
+
+/* v2.2: header height aware, phone sizes */
+html, body { overflow-x: clip; }
+h4 { margin: 14px 0 0; font-size: 12px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+aside { top: var(--hh, 56px); max-height: calc(100vh - var(--hh, 56px)); }
+nav { top: var(--hh, 56px); }
+.layout { min-height: calc(100vh - var(--hh, 56px)); }
+.cmain, .bodytext { min-width: 0; }
+.ptext, .desc, .alt, .warn, .err, .reply { overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  aside { top: 0; max-height: none; }
+  nav { overflow-x: auto; }
+  nav button { padding: 12px 10px; white-space: nowrap; }
+}
+@media (max-width: 600px) {
+  header { gap: 8px; padding: 8px 12px; }
+  .brand { font-size: 15px; width: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .pill { margin-left: 0; }
+  .status { order: 3; width: 100%; min-width: 0; font-size: 12px; }
+  .actions { width: 100%; flex-wrap: wrap; gap: 6px; }
+  .actions button { padding: 6px 12px; font-size: 12px; flex: 1 1 auto; }
+  main { padding: 0 12px 60px; }
+  aside { padding: 8px 12px 24px; }
+  .card { grid-template-columns: 22px 1fr; padding: 10px; gap: 8px; }
+  .body img { width: 64px; height: 64px; }
+  .bulk button { padding: 5px 10px; font-size: 12px; }
+  .sep { display: none; }
+}
+header { background: var(--bg); }
+@media (max-width: 600px) { #usage { font-size: 11px; } .actions #pauseBtn { flex: 0 0 auto; } }

@@ -1,3 +1,6 @@
+import { command, isWorker, ready, drainInbox } from "./engine.js";
+ready.then(drainInbox);
+
 // Reads a post (text + images) and asks an AI for reply ideas.
 // Claude is the main AI; Google Gemini is the backup when Claude has no key, no credit or an error.
 const DEFAULTS = {
@@ -191,6 +194,8 @@ async function openAutopilot(focus) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "ap") { command(msg).then(sendResponse, e => sendResponse({ ok: false, error: e.message })); return true; }
+  if (msg.type === "apWhoAmI") { ready.then(() => sendResponse({ worker: isWorker(sender.tab?.id) })); return true; }
   if (msg.type === "apOpen") { openAutopilot(msg.focus).finally(() => sendResponse({ ok: true })); return true; }
   if (msg.type === "apCollector") { if (sender.tab) chrome.storage.local.set({ apCollectorTab: sender.tab.id }); return; }
   if (msg.type === "draft") {
