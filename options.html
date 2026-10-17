@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Reply Helper settings</title>
+<style>body{font:14px system-ui,sans-serif;max-width:640px;margin:24px auto;padding:0 16px}label{display:block;margin-top:14px;font-weight:600}input,textarea{width:100%;padding:8px;margin-top:4px;box-sizing:border-box}textarea{height:180px}button{margin-top:16px;padding:8px 18px}#s{margin-left:10px;color:green}</style>
+</head><body>
+<h2>Reply Helper settings</h2>
+<label>Which AI to use
+<select id="provider" style="width:100%;padding:8px;margin-top:4px"><option value="auto">Claude first, Google Gemini as backup</option><option value="claude">Claude only</option><option value="gemini">Google Gemini only</option></select></label>
+<label>Claude API key <input id="apiKey" type="password" placeholder="sk-ant-..."></label>
+<label>Claude model <input id="model"></label>
+<label>Google Gemini API key (from aistudio.google.com) <input id="geminiKey" type="password" placeholder="AIza..."></label>
+<label>Gemini model <input id="geminiModel"></label>
+<label><input id="sendImages" type="checkbox" style="width:auto"> Send the post's images to the AI (turn off for text only: faster, cheaper, but it can miss what's in the picture)</label>
+<label><input id="reviewer" type="checkbox" style="width:auto"> Use a second AI to review and pick the best reply</label>
+<label>Reviewer model <input id="reviewerModel"></label>
+<label>Daily reply goal <input id="goal" type="number" min="1"></label>
+<label>Your voice (how replies should sound) <textarea id="voice"></textarea></label>
+<button id="save">Save</button><span id="s"></span>
+<h3 style="margin-top:32px">Your post bank</h3>
+<p id="bankinfo"></p>
+<p style="color:#555">Your 500 posts from X-Text-Bank.xlsx are already built in. Only import files with new posts.</p>
+<label>Add more posts (.xlsx like X-Text-Bank.xlsx, .csv with a "Post" column, or .txt with one post per line) <input id="importFile" type="file" accept=".xlsx,.csv,.txt"></label>
+<button id="exportBtn">Download list of posted posts (CSV)</button>
+<button id="resetBtn">Reset: mark all posts as unused</button>
+<script src="options.js"></script>
+</body></html>
