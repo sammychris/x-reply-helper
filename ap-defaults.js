@@ -48,6 +48,7 @@ self.AP_DEFAULTS = {
   reader: "gemini", // who describes pictures and video frames
   writer: "gemini",
   reviewer: "claude",
+  replyMode: "auto", // "auto" (AI picks per post), "opinion" or "reaction"
   passScore: 6,
   autoUntick: false, // off = every post comes ticked on the review screen; you decide
   bannedWords:

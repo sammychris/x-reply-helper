@@ -343,20 +343,25 @@
     if (poster && poster.startsWith("https://pbs.twimg.com/")) images.push(poster.replace(/name=\w+/, "name=small"));
     // Frames only when the post's own words don't already explain the video (saves time and AI cost).
     const frames = opts.frames && info.type === "video" && (texts[0] || "").length < 120 && !alts.length ? await grabFrames(a) : [];
-    let replies = [];
+    let replies = [], grokReply = "";
     if (opts.readReplies) {
       for (let i = 0; i < 3 && replies.length < 10; i++) {
         window.scrollTo(0, a.getBoundingClientRect().bottom + window.scrollY - 100 + i * window.innerHeight * 0.8);
         await sleep(1200);
         const all = [...document.querySelectorAll('article[data-testid="tweet"]')];
         const start = all.indexOf(focal(id));
-        replies = all.slice(start + 1)
-          .filter(r => { const i = articleInfo(r); return i && !i.isAd && i.handle.toLowerCase() !== (opts.me || ""); }) // no ads, not your own replies
-          .map(r => r.querySelector('[data-testid="tweetText"]')?.innerText || "").filter(t => t.trim().length > 2).slice(0, 10);
+        const read = all.slice(start + 1)
+          .map(r => ({ i: articleInfo(r), text: r.querySelector('[data-testid="tweetText"]')?.innerText || "" }))
+          .filter(r => r.i && !r.i.isAd && r.i.handle.toLowerCase() !== (opts.me || "") && r.text.trim().length > 2) // no ads, not your own replies
+          .slice(0, 10);
+        // Grok's answer (if someone asked @grok and it's among the replies read) is labelled separately
+        const g = read.find(r => r.i.handle.toLowerCase() === "grok");
+        if (g) grokReply = g.text;
+        replies = read.filter(r => r !== g).map(r => r.text);
       }
       window.scrollTo(0, 0);
     }
-    return { ...info, text: texts[0] || "", quoted: texts[1] || "", images: [...new Set(images)].slice(0, 4), alts, frames, replies };
+    return { ...info, text: texts[0] || "", quoted: texts[1] || "", images: [...new Set(images)].slice(0, 4), alts, frames, replies, grokReply };
   }
 
   function xError() {

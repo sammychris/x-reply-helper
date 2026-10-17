@@ -1,3 +1,4 @@
+import { writerPrompt, writerTask, REVIEWER as REVIEW_RULES, styleProblems as checkStyle, DEFAULT_VOICE } from "./prompts.js";
 // AI calls for Autopilot. Three jobs:
 //  reader   - looks at pictures / video frames once and turns them into a short description
 //  writer   - drafts 3 replies from text only (post + description + other replies)
@@ -8,9 +9,7 @@ const KEY_DEFAULTS = {
   reviewerModel: "claude-haiku-5-5",
   geminiKey: "",
   geminiModel: "gemini-3.1-flash-lite",
-  voice:
-    "I'm Sammy (@sammychrise), an AI filmmaker and software engineer who loves movies. " +
-    "Reply to posts on X the way a real person would: simple, natural, and making sense with the post."
+  voice: DEFAULT_VOICE
 };
 export async function keys() {
   const k = { ...KEY_DEFAULTS, ...(await chrome.storage.sync.get(Object.keys(KEY_DEFAULTS))) };
@@ -128,6 +127,7 @@ export function postContext(it) {
   if (p.type === "video") lines.push("It has a video.");
   if (p.alts?.length) lines.push("Picture description written by the poster: " + p.alts.join(" | "));
   if (it.desc) lines.push(`What's in the ${p.type === "video" ? "video" : "picture"}: ${it.desc}`);
+  if (p.grokReply) lines.push(`Grok's explanation (from the replies):\n${p.grokReply.slice(0, 1200)}`);
   if (it.grok) lines.push(`Grok's explanation of the post:\n${it.grok}`);
   if (p.replies?.length) lines.push("Replies other people already left (context only):\n" + p.replies.map((r, i) => `${i + 1}. ${r.slice(0, 280)}`).join("\n"));
   return lines.join("\n");
@@ -149,59 +149,24 @@ export async function describe(it, media, ap) {
   return { description: String(out.description || ""), understood: out.understood !== false, via };
 }
 
-function styleRules(ap) {
-  return (
-    "\n\nHow to write:\n" +
-    "- Sound like a normal person typing on their phone: plain everyday words, sentences that flow and connect.\n" +
-    "- Let the post decide the language, tone and length.\n" +
-    "- React to the specific thing in this post: a thought, a joke, an opinion or a question about it.\n" +
-    "- Never use dashes (— or –) to join sentences, no semicolons, no hashtags, at most one emoji.\n" +
-    `- Never use these words or phrases: ${ap.bannedWords}.\n` +
-    "- No lists of three, no \"it's not just X, it's Y\", don't open with a compliment or with \"Ah\".\n" +
-    "- Don't make up things that happened to you, and don't promote anything."
-  );
-}
-
-export async function write(it, ap) {
+// Writer: the style comes from Settings (auto / opinion / reaction), or is forced when you rewrite one post.
+export async function write(it, ap, forceMode) {
   const k = await keys();
-  const task =
-    "\n\nWrite 3 different replies to this post. Use the other replies only to understand the post, don't copy them.\n" +
-    "If the post is a giveaway, bait, a scam, a tragedy or politics, or you can't tell what it's about, set skip to true and say why in a few words.\n" +
-    'Answer with JSON only: {"skip": false, "reason": "", "replies": ["...", "...", "..."]}';
-  const { out, via } = await run(ap.writer, "writer", k.voice + styleRules(ap), postContext(it) + task, [], 600);
-  return { skip: !!out.skip, reason: String(out.reason || ""), replies: (out.replies || []).map(String).filter(r => r.trim()).slice(0, 3), via };
+  const mode = forceMode || ap.replyMode || "auto";
+  const { out, via } = await run(ap.writer, "writer", writerPrompt(mode, k.voice), postContext(it) + writerTask(mode), [], 600);
+  const used = mode === "auto" ? (out.mode === "reaction" ? "reaction" : "opinion") : mode;
+  return { mode: used, skip: !!out.skip, reason: String(out.reason || ""), replies: (out.replies || []).map(String).filter(r => r.trim()).slice(0, 3), via };
 }
 
-const REVIEWER =
-  "You are a strict editor checking reply drafts for a creator's X account before they go out. You did not write them. " +
-  "Judge each draft only against the post:\n" +
-  "1. Fits THIS post specifically (would make no sense under a different post).\n" +
-  "2. Adds something: a real opinion, joke, insight or question, not just 'lol' or 'facts'.\n" +
-  "3. Accurate: doesn't misread the picture, video or joke, no invented facts or personal stories.\n" +
-  "4. Safe: not rude, not offensive, not spammy, no self-promotion.\n" +
-  "5. Sounds like a real person typing, not an AI: plain words, natural flow. Dashes, buzzwords, stiff or polished wording lose points.\n" +
-  "Score each draft 1-10. Give 4 or less to any that fails 1, 3 or 4.";
-
-export async function review(it, drafts, ap) {
+export async function review(it, drafts, ap, mode) {
   const task =
-    `\n\nBanned words for this account: ${ap.bannedWords}.\n\nDrafts:\n` + drafts.map((r, i) => `${i}. ${r}`).join("\n") +
+    `\n\nThese drafts are ${mode === "reaction" ? "REACTION" : "OPINION"} replies.\nBanned words for this account: ${ap.bannedWords}.\n\nDrafts:\n` + drafts.map((r, i) => `${i}. ${r}`).join("\n") +
     '\n\nAnswer with JSON only: {"scores": [n, n, n], "best": index, "notes": ["very short reason per draft"]}';
-  const { out, via } = await run(ap.reviewer, "reviewer", REVIEWER, postContext(it) + task, [], 400);
+  const { out, via } = await run(ap.reviewer, "reviewer", REVIEW_RULES, postContext(it) + task, [], 400);
   return { scores: (out.scores || []).map(Number), best: Number.isInteger(out.best) ? out.best : 0, notes: (out.notes || []).map(String), via };
 }
 
-// Free check on our side: things that make a reply look AI-written.
-export function styleProblems(reply, ap) {
-  const issues = [];
-  if (/[—–]/.test(reply)) issues.push("dash");
-  if (/;/.test(reply)) issues.push("semicolon");
-  if (/(^|\s)#\w/.test(reply)) issues.push("hashtag");
-  if ((reply.match(/\p{Extended_Pictographic}/gu) || []).length > 2) issues.push("too many emojis");
-  const banned = String(ap.bannedWords || "").split(",").map(w => w.trim().toLowerCase()).filter(Boolean);
-  const low = reply.toLowerCase();
-  for (const w of banned) {
-    const re = new RegExp("(^|[^\\p{L}])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?=$|[^\\p{L}])", "iu");
-    if (re.test(low)) issues.push(`"${w}"`);
-  }
-  return issues;
+// Free check on our side for AI-sounding writing (rules live in prompts.js).
+export function styleProblems(reply, ap, mode) {
+  return checkStyle(reply, ap.bannedWords, mode);
 }

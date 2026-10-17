@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sammy's Reply Helper, Autopilot & Post Picker for X",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Autopilot collects posts, reads them, drafts replies (one AI writes, another picks) and, after you review each batch, likes / reposts / replies with natural gaps.",
   "permissions": [
     "storage"

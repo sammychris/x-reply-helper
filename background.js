@@ -1,4 +1,5 @@
 import { command, isWorker, ready, drainInbox } from "./engine.js";
+import { writerPrompt, writerTask, REVIEWER, styleProblems, DEFAULT_VOICE } from "./prompts.js";
 ready.then(drainInbox);
 
 // Reads a post (text + images) and asks an AI for reply ideas.
@@ -14,9 +15,7 @@ const DEFAULTS = {
   reviewer: true,
   reviewWithGemini: false, // the reviewer doubles Gemini requests; off by default to stay inside free limits
   reviewerModel: "claude-haiku-5-5",
-  voice:
-    "I'm Sammy (@sammychrise), an AI filmmaker and software engineer who loves movies. " +
-    "Reply to posts on X the way a real person would: simple, natural, and making sense with the post."
+  voice: DEFAULT_VOICE
 };
 
 chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());
@@ -37,17 +36,12 @@ function postContext(post, withImages) {
     (post.images.length ? `It has ${post.images.length} image(s)${withImages ? " shown above" : " (not available)"}.\n` : "") +
     (post.hasVideo ? "It contains a video (only its preview image, if any, is shown).\n" : "") +
     (post.quoted ? `It quotes this other post:\n"""${post.quoted}"""\n` : "") +
+    (post.grokReply ? `Grok's explanation (from the replies):\n${post.grokReply.slice(0, 1200)}\n` : "") +
     (post.replies && post.replies.length
       ? `Replies other people already left (context only):\n` + post.replies.map((r, i) => `${i + 1}. ${r.slice(0, 280)}`).join("\n") + "\n"
       : "")
   );
 }
-
-const WRITER_TASK =
-  "\nWrite 3 different replies to this post. Let the post decide the language, tone and length. " +
-  "Use the other replies only to understand the post, don't copy them.\n" +
-  "If the post is a giveaway, bait, a scam, a tragedy or politics, set skip to true and say why.\n" +
-  'Answer with JSON only: {"skip": false, "reason": "", "replies": ["...", "...", "..."]}';
 
 function parseJSON(text) {
   const match = (text || "").match(/\{[\s\S]*\}/);
@@ -145,26 +139,23 @@ async function ask(role, system, post, withImages, task, maxTokens) {
 }
 
 // AI 1: the writer drafts 3 replies.
+// Same reply styles as Autopilot: the style setting (Auto / Opinion / Reaction) is in the Autopilot control center.
+async function apPrefs() {
+  const { apSettings = {} } = await chrome.storage.local.get("apSettings");
+  return { replyMode: apSettings.replyMode || "auto", bannedWords: apSettings.bannedWords ?? self.AP_DEFAULTS?.bannedWords ?? "" };
+}
 async function write(post, withImages) {
   const s = await settings();
-  const parsed = await ask("writer", s.voice, post, withImages, WRITER_TASK, 600);
-  return { skip: !!parsed.skip, reason: parsed.reason || "", replies: (parsed.replies || []).slice(0, 3) };
+  const { replyMode } = await apPrefs();
+  const parsed = await ask("writer", writerPrompt(replyMode, s.voice), post, withImages, writerTask(replyMode), 600);
+  const mode = replyMode === "auto" ? (parsed.mode === "reaction" ? "reaction" : "opinion") : replyMode;
+  return { mode, skip: !!parsed.skip, reason: parsed.reason || "", replies: (parsed.replies || []).map(String).slice(0, 3) };
 }
 
-// AI 2: a separate reviewer that never saw the writer's instructions checks each draft against the post.
-const REVIEWER =
-  "You are a strict editor reviewing reply drafts for a creator's X account before he posts them. " +
-  "You did not write them. Judge each draft only against the post (and its images, quoted post and other replies):\n" +
-  "1. Fits THIS post specifically (would make no sense under a different post).\n" +
-  "2. Adds something: a real opinion, insight or question, not just a reaction like 'lol' or 'facts'.\n" +
-  "3. Accurate: no misreading of the image or joke, no invented facts or personal experiences.\n" +
-  "4. Safe: not rude, not offensive, not spammy, no self-promotion.\n" +
-  "5. Sounds like a real person and matches the post's language and tone.\n" +
-  "Score each draft 1-10. Reject (score 4 or less) any that fails 1, 3 or 4.";
-
-async function review(post, withImages, replies) {
+// AI 2: a separate reviewer (rules in prompts.js) checks each draft against the post.
+async function review(post, withImages, replies, mode) {
   const task =
-    "\nDrafts:\n" + replies.map((r, i) => `${i}. ${r}`).join("\n") +
+    `\nThese drafts are ${mode === "reaction" ? "REACTION" : "OPINION"} replies.\nDrafts:\n` + replies.map((r, i) => `${i}. ${r}`).join("\n") +
     '\n\nAnswer with JSON only: {"scores": [n, n, n], "best": index, "notes": ["very short reason per draft", ...]}';
   const r = await ask("reviewer", REVIEWER, post, withImages, task, 400);
   return { scores: r.scores || [], best: Number.isInteger(r.best) ? r.best : 0, notes: r.notes || [] };
@@ -175,10 +166,20 @@ async function draftAndReview(post, withImages) {
   const out = await write(post, withImages);
   const usedGemini = lastUsed.startsWith("Gemini");
   if (s.reviewer && out.replies.length && !(usedGemini && !s.reviewWithGemini)) {
-    try { out.review = await review(post, withImages, out.replies); }
+    try { out.review = await review(post, withImages, out.replies, out.mode); }
     catch (e) { out.note = "Reviewer unavailable: " + e.message; }
   }
   out.via = lastUsed;
+  // free local check for AI-sounding writing: each problem costs 2 points
+  if (out.replies.length) {
+    const { bannedWords } = await apPrefs();
+    const issues = out.replies.map(r => styleProblems(r, bannedWords, out.mode));
+    const rv = out.review || { scores: out.replies.map(() => 7), notes: [] };
+    rv.scores = out.replies.map((_, i) => Math.max(1, (rv.scores[i] || 5) - 2 * issues[i].length));
+    rv.notes = out.replies.map((_, i) => [rv.notes[i], issues[i].length ? "check: " + issues[i].join(", ") : ""].filter(Boolean).join(" · "));
+    rv.best = rv.scores.indexOf(Math.max(...rv.scores));
+    out.review = rv;
+  }
   return out;
 }
 

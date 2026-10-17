@@ -1,4 +1,4 @@
-SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.2.0
+SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.3.0
 
 WHAT IT DOES
 - Adds a "Reply ideas" button under every post on x.com.
@@ -108,3 +108,16 @@ CHANGES IN 2.2
 - "AI calls today" counter at the top (watch Gemini's free daily limit).
 - Video frames are only grabbed when the post's text doesn't explain the video, and dropped after use.
 - Replies read for context skip ads and your own replies. AI requests time out after 45 s instead of hanging.
+
+CHANGES IN 2.3: reply styles
+- Two styles, from your one-week data:
+  OPINION: a bold one-line stance, optionally a second line with a sarcastic punchline about one detail. Under 30 words.
+  REACTION: one short casual line about one specific detail.
+- Control center > AI > Reply style: Auto (AI picks per post: debate → opinion, funny / clip → reaction), Opinion only, Reaction only.
+  Each review card shows its style and has "Rewrite as opinion / reaction". The bar above the list shows the mix (aim 60–70% opinion).
+- The ✨ Reply ideas button uses the same prompts and style setting.
+- Punctuation rules: max 1–2 marks per sentence, no semicolons / colons / dashes, "..." welcome.
+- Reviewer and the free local check now mark down hedging ("anyways", "I think"), preaching, empty compliments, "Honestly" openers,
+  "it's not X it's Y", too much punctuation and replies that are too long. Short and funny is never marked down.
+- If Grok's reply is among the replies read, it's passed to the writer as "Grok's explanation".
+- Gemini model unchanged: gemini-3.1-flash-lite (free tier).

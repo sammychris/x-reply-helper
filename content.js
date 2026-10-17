@@ -41,16 +41,20 @@
 
     // Your old trick: other people's replies as context (3 to 10 of them).
     // Only available when the post is open on its own page (x.com/.../status/...).
-    let replies = [];
+    let replies = [], grokReply = "";
     if (location.pathname.includes("/status/")) {
       const all = [...document.querySelectorAll('article[data-testid="tweet"]')];
       const i = all.indexOf(article);
-      replies = all.slice(i + 1)
-        .map(a => a.querySelector('[data-testid="tweetText"]')?.innerText || "")
-        .filter(t => t.trim().length > 2)
+      const read = all.slice(i + 1)
+        .map(a => ({ who: a.querySelector('[data-testid="User-Name"]')?.innerText || "", text: a.querySelector('[data-testid="tweetText"]')?.innerText || "" }))
+        .filter(r => r.text.trim().length > 2)
         .slice(0, 10);
+      // Grok's answer (if someone asked @grok) is labelled "Grok's explanation"
+      const g = read.find(r => /@grok\b/i.test(r.who));
+      if (g) grokReply = g.text;
+      replies = read.filter(r => r !== g).map(r => r.text);
     }
-    return { text, quoted, author, replies, images: [...new Set(images)].slice(0, 4), hasVideo: !!article.querySelector("video") };
+    return { text, quoted, author, replies, grokReply, images: [...new Set(images)].slice(0, 4), hasVideo: !!article.querySelector("video") };
   }
 
   // ---------- putting an idea into X's reply box ----------
@@ -106,7 +110,9 @@
         const ctx = location.pathname.includes("/status/")
           ? (n ? `Read ${n} ${n === 1 ? "reply" : "replies"} for context` : "No replies yet to read for context")
           : "Feed post: open the post to also read its replies";
-        if (res.via) panel.append(Object.assign(document.createElement("div"), { className: "srh-review", textContent: `Written by ${res.via} · ${ctx}` }));
+        const style = res.mode ? ` · ${res.mode === "reaction" ? "Reaction" : "Opinion"}` : "";
+        const grok = post.grokReply ? " + Grok's explanation" : "";
+        if (res.via) panel.append(Object.assign(document.createElement("div"), { className: "srh-review", textContent: `Written by ${res.via}${style} · ${ctx}${grok}` }));
         if (res.note) panel.append(Object.assign(document.createElement("div"), { className: "srh-note", textContent: res.note }));
         if (res.skip) {
           panel.append(Object.assign(document.createElement("div"), { className: "srh-note", textContent: `Suggest skipping: ${res.reason}` }));

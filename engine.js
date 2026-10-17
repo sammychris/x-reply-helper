@@ -205,24 +205,33 @@ async function think(it) {
     it.understood = (p.text || "").length > 40 || (p.alts || []).length > 0;
   }
   delete p.frames; // used once, then dropped (they're big)
+  if (p.grokReply) it.understood = true; // Grok already explained it in the replies
   if (p.type === "video" && !it.understood && ap.grok && (await grokLeft()) > 0) {
     const g = await withWorker(async () => { await openPost(it); return send({ type: "apGrok", id: it.id }, 70000); }).catch(e => ({ ok: false, error: e.message }));
     if (g.ok) { it.grok = g.text; it.understood = true; await useGrok(); }
     else it.warn.push("Grok: " + g.error);
   }
 
-  const w = await write(it, ap);
-  it.drafts = w.replies; it.via = w.via;
+  await writeAndPick(it);
+}
+
+// Write 3 replies (in the chosen style) and let the reviewer + local check pick the best.
+async function writeAndPick(it, forceMode) {
+  const p = it.post;
+  it.skipReason = "";
+  it.warn = (it.warn || []).filter(w => !/^(Suggest skipping|Reviewer unavailable|Not sure)/.test(w));
+  const w = await write(it, ap, forceMode);
+  it.drafts = w.replies; it.via = w.via; it.mode = w.mode;
   if (w.skip) it.skipReason = w.reason || "AI suggests skipping";
   if (!it.drafts.length) throw new Error(it.skipReason || "The writer sent no replies.");
 
   let scores = it.drafts.map(() => 7), notes = [];
   try {
-    const r = await review(it, it.drafts, ap);
+    const r = await review(it, it.drafts, ap, it.mode);
     scores = it.drafts.map((_, i) => r.scores[i] || 5); notes = r.notes;
     it.via += " → " + r.via;
   } catch (e) { it.warn.push("Reviewer unavailable: " + e.message); }
-  it.issues = it.drafts.map(d => styleProblems(d, ap)); // free check for AI-sounding writing
+  it.issues = it.drafts.map(d => styleProblems(d, ap, it.mode)); // free check for AI-sounding writing
   scores = scores.map((s, i) => Math.max(1, s - 2 * it.issues[i].length));
   const best = scores.indexOf(Math.max(...scores));
   it.scores = scores; it.notes = notes; it.best = best;
@@ -434,6 +443,15 @@ export async function command(msg) {
     case "action": for (const id of msg.ids) { const it = find(id); if (it && ["queued", "ready"].includes(it.status)) setAction(it, msg.key, msg.on); } return { ok: true };
     case "tick": for (const id of msg.ids) { const it = find(id); if (it?.status === "ready") { it.include = msg.on; touch(it); } } return { ok: true };
     case "remove": queue = queue.filter(i => !msg.ids.includes(i.id) || i.status === "posting"); await saveNow(); return { ok: true };
+    case "rewrite": { // write this post again in the other style
+      const it = find(msg.id);
+      if (!it?.post || it.status !== "ready") return { ok: false, error: "Only posts on the review screen can be rewritten." };
+      it.status = "writing"; touch(it);
+      try { await writeAndPick(it, msg.mode); it.status = "ready"; }
+      catch (e) { it.status = "ready"; it.error = e.message; }
+      touch(it);
+      return { ok: true };
+    }
     case "retry": { const it = find(msg.id); if (it) { it.status = "queued"; it.error = ""; touch(it); } return { ok: true }; }
     case "clearFinished": queue = queue.filter(i => !FINISHED.includes(i.status)); await saveNow(); return { ok: true };
     case "clearQueue":

@@ -31,7 +31,11 @@ async function loadAll() {
 const saveSettings = () => chrome.storage.local.set({ apSettings: ap });
 
 chrome.storage.onChanged.addListener((ch, area) => {
-  if (area === "session" && ch.apStatus) { status = ch.apStatus.newValue || status; renderStatus(); renderCounts(); return; }
+  if (area === "session" && ch.apStatus) {
+    status = ch.apStatus.newValue || status;
+    if (/^Ready to review/.test(status.text) && tab === "queue") { tab = "review"; scheduleRender(); } // batch written: show it
+    renderStatus(); renderCounts(); return;
+  }
   if (area !== "local") return;
   if (ch.apQueue) { queue = ch.apQueue.newValue || []; scheduleRender(); }
   if (ch.apLog) { logLines = ch.apLog.newValue || []; if (tab === "log") renderLog(); }
@@ -92,6 +96,7 @@ function card(it) {
     it.type && el("span", { className: "tag", textContent: it.type }),
     el("span", { className: "tag", textContent: it.source === "group" ? "chat link" : it.source }),
     el("span", { className: "tag st-" + it.status, textContent: STATUS_TEXT[it.status] }),
+    it.mode && it.actions.reply && el("span", { className: "tag mode-" + it.mode, textContent: it.mode === "reaction" ? "Reaction" : "Opinion" }),
     it.score != null && it.actions.reply && el("span", { className: "tag score" + (it.score < ap.passScore ? " low" : ""), textContent: `${it.score}/10` }),
     it.fav && el("span", { className: "tag", textContent: "★ favourite" }),
     it.status !== "posting" && x
@@ -123,7 +128,14 @@ function card(it) {
   }
   const foot = el("div", { className: "foot" });
   if (["queued", "ready"].includes(it.status)) foot.append(actBoxes({ ...it.actions }, (k, on) => cmd("action", { ids: [it.id], key: k, on })));
-  const note = it.notes?.[it.drafts?.indexOf(it.reply)] || "";
+  if (it.status === "ready" && it.actions.reply && it.drafts?.length) {
+    const other = it.mode === "reaction" ? "opinion" : "reaction";
+    const rw = el("button", { className: "ghost", textContent: `Rewrite as ${other}` });
+    rw.onclick = () => { rw.disabled = true; rw.textContent = "Rewriting…"; cmd("rewrite", { id: it.id, mode: other }); };
+    foot.append(rw);
+  }
+  const iss = it.issues?.[it.drafts?.indexOf(it.reply)] || [];
+  const note = [it.notes?.[it.drafts?.indexOf(it.reply)], iss.length ? "check: " + iss.join(", ") : ""].filter(Boolean).join(" · ");
   if (it.via || note) foot.append(el("span", { className: "note", textContent: [it.via, note].filter(Boolean).join(" · ") }));
   if (["failed", "skipped"].includes(it.status)) {
     const again = el("button", { className: "ghost", textContent: "Try again" });
@@ -158,6 +170,9 @@ function renderPace() {
   if (box.contains(document.activeElement)) return; // don't redraw while you're typing the minutes
   const ticked = queue.filter(i => i.status === "ready" && i.include).length;
   const fastest = ticked * WORK_SEC;
+  const rd = queue.filter(i => i.status === "ready" && i.include && i.actions.reply && i.mode);
+  const op = rd.filter(i => i.mode === "opinion").length;
+  const mix = rd.length ? el("span", { className: "mix", textContent: `· ${op} opinion · ${rd.length - op} reaction (${Math.round((op / rd.length) * 100)}% opinion, aim 60–70%)` }) : "";
   if (ap.paceMode === "finish") {
     const total = Number(ap.finishMinutes) * 60;
     const each = ticked ? total / ticked : 0;
@@ -165,9 +180,9 @@ function renderPace() {
     inp.onchange = () => { ap.finishMinutes = Math.max(1, Number(inp.value) || 1); saveSettings(); bindSettings(); inp.blur(); renderPace(); };
     box.replaceChildren(el("span", { textContent: "Finish in" }), inp, el("span", { textContent: "minutes" }),
       ticked ? el("span", { innerHTML: `· <b>${ticked}</b> ticked · about <b>${fmtMin(each)}</b> on each post before acting, every wait different` }) : "",
-      ticked && fastest > total ? el("span", { className: "warnc", textContent: `· too short: fastest for ${ticked} posts is about ${fmtMin(fastest)}, so it'll take that long` }) : "");
+      ticked && fastest > total ? el("span", { className: "warnc", textContent: `· too short: fastest for ${ticked} posts is about ${fmtMin(fastest)}, so it'll take that long` }) : "", mix);
   } else {
-    box.replaceChildren(el("span", { innerHTML: `Waits <b>${ap.minGap}–${ap.maxGap} s</b> on each post before acting, rests ${ap.restMinutes} min after every ${ap.restEvery}. Change it under Speed.` }));
+    box.replaceChildren(el("span", { innerHTML: `Waits <b>${ap.minGap}–${ap.maxGap} s</b> on each post before acting, rests ${ap.restMinutes} min after every ${ap.restEvery}. Change it under Speed.` }), mix);
   }
 }
 

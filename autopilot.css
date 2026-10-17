@@ -110,3 +110,7 @@ nav { top: var(--hh, 56px); }
 }
 header { background: var(--bg); }
 @media (max-width: 600px) { #usage { font-size: 11px; } .actions #pauseBtn { flex: 0 0 auto; } }
+
+.tag.mode-opinion { color: #c9a0ff; border-color: #6b4fa0; }
+.tag.mode-reaction { color: #ffb86b; border-color: #8a5a20; }
+.pace .mix { color: var(--dim); }
