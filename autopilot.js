@@ -16,12 +16,14 @@ let paused = false;
 let tab = "review";
 let collectorTab = null;
 let writeAfterCollect = false;
+let filteredList = [];
 
 // ---------- saving ----------
 async function loadAll() {
-  const st = await chrome.storage.local.get(["apSettings", "apQueue", "apLog", "apCollectorTab"]);
+  const st = await chrome.storage.local.get(["apSettings", "apQueue", "apLog", "apCollectorTab", "apFiltered"]);
   const s = st.apSettings || {};
-  ap = { ...structuredClone(D), ...s, types: { ...D.types, ...(s.types || {}) }, defaultActions: { ...structuredClone(D.defaultActions), ...(s.defaultActions || {}) } };
+  ap = { ...structuredClone(D), ...s, types: { ...D.types, ...(s.types || {}) }, filters: { ...D.filters, ...(s.filters || {}) }, defaultActions: { ...structuredClone(D.defaultActions), ...(s.defaultActions || {}) } };
+  filteredList = st.apFiltered || [];
   queue = (st.apQueue || []).map(i => ({ ...i, status: ["reading", "writing"].includes(i.status) ? "queued" : i.status === "posting" ? "ready" : i.status }));
   logLines = st.apLog || [];
   collectorTab = st.apCollectorTab || null;
@@ -82,6 +84,7 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area !== "local") return;
   if (ch.apInbox) drainInbox();
   if (ch.apCollectorTab) collectorTab = ch.apCollectorTab.newValue;
+  if (ch.apFiltered) { filteredList = ch.apFiltered.newValue || []; scheduleRender(); }
   if (ch.counts) renderCount();
 });
 
@@ -191,7 +194,8 @@ async function think(it) {
 
   if (!it.understood) it.warn.push(`Not sure what's in the ${p.type === "video" ? "video" : "picture"}.`);
   if (it.skipReason) it.warn.push("Suggest skipping: " + it.skipReason);
-  it.include = !it.skipReason && it.understood && it.score >= ap.passScore;
+  // You decide: everything comes ticked unless you turned on "Untick weak replies for me".
+  it.include = ap.autoUntick ? !it.skipReason && it.understood && it.score >= ap.passScore : true;
 }
 
 async function writeBatch() {
@@ -216,7 +220,7 @@ async function writeBatch() {
       if (!r.ok) throw new Error(r.error);
       it.post = r.post;
       Object.assign(it, { handle: r.post.handle, text: r.post.text, thumb: r.post.thumb || it.thumb, type: r.post.type, url: r.post.url || it.url });
-      if (it.handle.toLowerCase() === String(ap.myHandle).toLowerCase().replace(/^@/, "")) { it.status = "skipped"; it.error = "Your own post"; touch(it); continue; }
+      if (ap.useFilters && ap.filters.own && it.handle.toLowerCase() === String(ap.myHandle).toLowerCase().replace(/^@/, "")) { it.status = "skipped"; it.error = "Your own post"; touch(it); continue; }
       it.status = "writing"; touch(it);
       jobs.push(lim(async () => {
         try { await think(it); it.status = "ready"; }
@@ -245,13 +249,15 @@ async function bumpCount() {
   counts[today()] = (counts[today()] || 0) + 1;
   await chrome.storage.local.set({ counts });
 }
-async function wait(sec, label) {
+async function wait(sec, label, extra = () => "") {
   const end = Date.now() + sec * 1000;
   while (Date.now() < end && !paused) {
-    setStatus(`${label} ${Math.ceil((end - Date.now()) / 1000)}s`);
+    setStatus(`${label} ${Math.ceil((end - Date.now()) / 1000)}s${extra()}`);
     await sleep(500);
   }
 }
+const WORK_SEC = 5; // rough time to open a post and act on it
+const fmtMin = sec => (sec >= 90 ? `${Math.round(sec / 60)} min` : `${Math.round(sec)} s`);
 const rand = (a, b) => a + Math.random() * Math.max(0, b - a);
 
 async function postApproved() {
@@ -259,10 +265,17 @@ async function postApproved() {
   const items = queue.filter(i => i.status === "ready" && i.include);
   if (!items.length) { setStatus("Nothing ticked to post."); return; }
   busy = "posting"; paused = false; render();
-  log(`Posting ${items.length}`);
+  const finish = ap.paceMode === "finish";
+  let deadline = Date.now() + Number(ap.finishMinutes) * 60e3;
+  // a random weight per gap, so every gap is different but they still add up to your time
+  const weights = items.map(() => 0.4 + Math.random() * 1.2);
+  let workAvg = WORK_SEC * 1000, workN = 1;
+  log(`Posting ${items.length}` + (finish ? ` within ${ap.finishMinutes} min` : ""));
   let n = 0, errors = 0, slow = 1;
+  const left = () => (finish ? ` · ${n}/${items.length} done · about ${fmtMin(Math.max(0, (deadline - Date.now()) / 1000))} left` : ` · ${n}/${items.length} done`);
   for (let k = 0; k < items.length && !paused; k++) {
     const it = items[k];
+    const t0 = Date.now();
     const want = { like: !!it.actions.like, repost: !!it.actions.repost, reply: it.actions.reply ? (it.reply || "").trim() : "" };
     if (!want.like && !want.repost && !want.reply) { it.status = "skipped"; it.error = "No action ticked"; touch(it); continue; }
     it.status = "posting"; touch(it);
@@ -282,6 +295,7 @@ async function postApproved() {
         return res;
       });
     } catch (e) { r = { ok: false, error: e.message }; }
+    workAvg = (workAvg * workN + (Date.now() - t0)) / ++workN;
 
     if (r.ok) {
       it.status = "done"; it.doneAt = Date.now(); touch(it); n++;
@@ -296,6 +310,7 @@ async function postApproved() {
       log(`X showed an error: ${r.xError}`, "e");
       if (errors >= 2) { paused = true; setStatus("X showed errors twice, so Autopilot paused. Wait a while before continuing.", false); break; }
       slow = 2;
+      deadline += 600e3;
       await wait(600, "X pushed back. Resting");
       continue;
     } else {
@@ -304,8 +319,14 @@ async function postApproved() {
       if (/^login/.test(it.error)) { paused = true; setStatus("Log in to X in the working window, then press Continue.", false); break; }
     }
     if (k < items.length - 1 && !paused) {
-      if (n && n % ap.restEvery === 0) await wait(ap.restMinutes * 60, `Resting after ${n}.`);
-      else await wait(rand(Number(ap.minGap), Number(ap.maxGap)) * slow, "Next one in");
+      if (finish) {
+        const rest = items.length - k - 1;
+        const budget = (deadline - Date.now() - workAvg * rest) / 1000; // seconds left for waiting
+        const share = weights.slice(k + 1).reduce((a, b) => a + b, 0);
+        const gap = budget > 0 ? (budget * weights[k + 1]) / share : rand(1, 3); // behind schedule: go as fast as safely possible
+        await wait(Math.max(1, gap) * slow, "Next one in", left);
+      } else if (n && n % ap.restEvery === 0) await wait(ap.restMinutes * 60, `Resting after ${n}.`, left);
+      else await wait(rand(Number(ap.minGap), Number(ap.maxGap)) * slow, "Next one in", left);
     }
   }
   busy = "";
@@ -335,6 +356,13 @@ let renderQueued = false;
 function scheduleRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); } }
 
 const inTab = i => (tab === "review" ? i.status === "ready" : tab === "queue" ? ["queued", "reading", "writing", "posting"].includes(i.status) : tab === "done" ? ["done", "skipped", "failed"].includes(i.status) : false);
+
+// Turning Reply on for a post that has no reply written yet sends it back to the queue to be written.
+function setAction(it, k, on) {
+  it.actions[k] = on;
+  if (k === "reply" && on && it.status === "ready" && !it.drafts?.length) { it.status = "queued"; it.include = false; it.warn = ["Reply turned on: press Write replies to write one."]; }
+  touch(it);
+}
 const STATUS_TEXT = { queued: "Waiting", reading: "Reading…", writing: "Writing…", ready: "Ready", posting: "Posting…", done: "Done", skipped: "Skipped", failed: "Failed" };
 const cards = new Map();
 
@@ -399,7 +427,11 @@ function card(it) {
     main.append(el("div", { className: "desc", textContent: "↳ " + it.reply }));
   }
   const foot = el("div", { className: "foot" });
-  if (["queued", "ready"].includes(it.status)) foot.append(actBoxes(it.actions, () => { saveQueue(); }));
+  if (["queued", "ready"].includes(it.status)) {
+    const boxes = actBoxes({ ...it.actions });
+    boxes.querySelectorAll("input").forEach((cb, i) => { cb.onchange = () => setAction(it, ["reply", "like", "repost"][i], cb.checked); });
+    foot.append(boxes);
+  }
   const note = it.notes?.[it.drafts?.indexOf(it.reply)] || "";
   if (it.via || note) foot.append(el("span", { className: "note", textContent: [it.via, note].filter(Boolean).join(" · ") }));
   if (["failed", "skipped"].includes(it.status)) {
@@ -412,12 +444,50 @@ function card(it) {
   return c;
 }
 
+function filteredCard(x) {
+  const add = el("button", { textContent: "Add to queue" });
+  add.onclick = async () => {
+    await addItems([{ ...x, source: "feed", actions: { ...ap.defaultActions.feed } }]);
+    filteredList = filteredList.filter(y => y.id !== x.id);
+    chrome.storage.local.set({ apFiltered: filteredList });
+    render();
+  };
+  return el("div", { className: "card out" }, el("span"),
+    el("div", {},
+      el("div", { className: "head" },
+        el("a", { className: "who", href: x.url, target: "_blank", textContent: "@" + x.handle }),
+        x.type && el("span", { className: "tag", textContent: x.type }),
+        el("span", { className: "tag st-failed", textContent: "Left out: " + x.reason })),
+      el("div", { className: "body" }, x.thumb && el("img", { src: x.thumb, alt: "", loading: "lazy" }), el("div", { className: "ptext", textContent: x.text || "(no text)" })),
+      el("div", { className: "foot" }, add)));
+}
+
+function renderPace() {
+  const box = $("#pace");
+  box.hidden = tab !== "review";
+  const ticked = queue.filter(i => i.status === "ready" && i.include).length;
+  const fastest = ticked * WORK_SEC;
+  if (ap.paceMode === "finish") {
+    const total = Number(ap.finishMinutes) * 60;
+    const each = ticked ? total / ticked : 0;
+    const inp = el("input", { type: "number", min: "1", value: ap.finishMinutes });
+    inp.onchange = () => { ap.finishMinutes = Math.max(1, Number(inp.value) || 1); saveSettings(); bindSettings(); renderPace(); };
+    box.replaceChildren(el("span", { textContent: "Finish in" }), inp, el("span", { textContent: "minutes" }),
+      ticked ? el("span", { innerHTML: `· <b>${ticked}</b> ticked · about <b>${fmtMin(each)}</b> each, every gap different` }) : "",
+      ticked && fastest > total ? el("span", { className: "warnc", textContent: `· too short: fastest for ${ticked} posts is about ${fmtMin(fastest)}, so it'll take that long` }) : "");
+  } else {
+    box.replaceChildren(el("span", { innerHTML: `Gap between posts: <b>${ap.minGap}–${ap.maxGap} s</b>, rest ${ap.restMinutes} min after every ${ap.restEvery}. Change it under Speed.` }));
+  }
+}
+
 function renderCounts() {
   const n = s => queue.filter(i => s.includes(i.status)).length;
   const ready = queue.filter(i => i.status === "ready");
   document.querySelector('[data-tab="review"] span').textContent = ready.length;
   document.querySelector('[data-tab="queue"] span').textContent = n(["queued", "reading", "writing", "posting"]);
   document.querySelector('[data-tab="done"] span').textContent = n(["done", "skipped", "failed"]);
+  document.querySelector('[data-tab="filtered"] span').textContent = filteredList.length || "";
+  renderPace();
   const ticked = ready.filter(i => i.include).length;
   $("#postBtn").textContent = ticked ? `Continue: post ${ticked}` : "Continue";
   $("#postBtn").disabled = !!busy || !ticked;
@@ -440,6 +510,13 @@ function render() {
   $("#list").hidden = $("#bulk").hidden = tab === "log";
   renderCounts();
   if (tab === "log") { renderLog(); $("#empty").textContent = ""; return; }
+  if (tab === "filtered") {
+    $("#bulk").hidden = true;
+    $("#list").replaceChildren(...filteredList.map(filteredCard));
+    cards.clear();
+    $("#empty").textContent = filteredList.length ? "" : ap.useFilters ? "Nothing was left out by your filters on the last Collect." : "Filters are off, so nothing is left out.";
+    return;
+  }
   const items = queue.filter(inTab);
   const nodes = items.map(it => {
     const c = cards.get(it.id);
@@ -470,6 +547,13 @@ function bindSettings() {
       saveSettings(); renderCounts();
     };
   });
+  document.querySelectorAll('input[name="pace"]').forEach(r => {
+    r.checked = ap.paceMode === r.value;
+    r.onchange = () => { ap.paceMode = r.value; saveSettings(); renderCounts(); };
+  });
+  const syncFilterBox = () => $("#filterBox").classList.toggle("off", !ap.useFilters);
+  syncFilterBox();
+  document.querySelector('[data-k="useFilters"]').addEventListener("change", syncFilterBox);
   const topics = $("#topics");
   topics.replaceChildren(...Object.entries(self.AP_TOPICS).map(([key, t]) => {
     const b = el("button", { className: "chip" + (ap.topics.includes(key) ? " on" : ""), textContent: t.label });
@@ -514,6 +598,15 @@ $("#linkFile").onchange = async e => {
   e.target.value = ""; tab = "queue"; render();
 };
 document.querySelectorAll("#tabs button").forEach(b => { b.onclick = () => { tab = b.dataset.tab; render(); }; });
+for (const [btn, k] of [["#replyAll", "reply"], ["#likeAll", "like"], ["#repostAll", "repost"]]) {
+  $(btn).onclick = () => {
+    const list = queue.filter(i => inTab(i) && ["queued", "ready"].includes(i.status));
+    if (!list.length) return;
+    const on = !list.every(i => i.actions[k]); // all on already → turn off; otherwise turn on for all
+    list.forEach(i => setAction(i, k, on));
+    setStatus(`${k[0].toUpperCase() + k.slice(1)} ${on ? "on" : "off"} for ${list.length} posts.` + (k === "reply" && on && list.some(i => i.status === "queued") ? " Posts without a reply went back to the queue: press Write replies." : ""), false);
+  };
+}
 $("#tickAll").onclick = () => { queue.filter(i => i.status === "ready").forEach(i => { i.include = true; touch(i); }); };
 $("#untickAll").onclick = () => { queue.filter(i => i.status === "ready").forEach(i => { i.include = false; touch(i); }); };
 $("#clearDone").onclick = () => { queue = queue.filter(i => !["done", "skipped", "failed"].includes(i.status)); render(); saveQueue(); };

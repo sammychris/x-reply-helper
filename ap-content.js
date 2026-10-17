@@ -10,7 +10,7 @@
   async function apSettings() {
     const { apSettings = {} } = await chrome.storage.local.get("apSettings");
     const d = self.AP_DEFAULTS;
-    return { ...d, ...apSettings, types: { ...d.types, ...(apSettings.types || {}) }, defaultActions: { ...d.defaultActions, ...(apSettings.defaultActions || {}) } };
+    return { ...d, ...apSettings, types: { ...d.types, ...(apSettings.types || {}) }, filters: { ...d.filters, ...(apSettings.filters || {}) }, defaultActions: { ...d.defaultActions, ...(apSettings.defaultActions || {}) } };
   }
   const list = s => String(s || "").split(/[,\n]/).map(x => x.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
   const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -59,21 +59,22 @@
     };
   }
 
-  // Returns the reason to skip a post, or "" to keep it.
+  // Returns the reason to leave a post out, or "" to keep it.
+  // Only "already done" always applies; every other filter runs only if you turned it on.
   function skipReason(info, s, rules) {
-    if (!info) return "unreadable";
-    if (info.isAd) return "ad";
-    const h = info.handle.toLowerCase();
-    if (h === rules.me) return "your own post";
-    if (rules.skipAcc.has(h)) return "skip list";
     if (rules.known.has(info.id)) return "already in queue or done";
-    if (!s.types[info.type]) return info.type + " posts are off";
-    if (s.maxAgeHours && info.time && Date.now() - Date.parse(info.time) > s.maxAgeHours * 3600e3) return "too old";
-    if (s.maxReplies && info.replies > s.maxReplies) return "too crowded";
+    if (!s.useFilters) return "";
+    const f = s.filters, h = info.handle.toLowerCase();
+    if (f.ads && info.isAd) return "ad";
+    if (f.own && h === rules.me) return "your own post";
+    if (f.accounts && rules.skipAcc.has(h)) return "skip list";
+    if (f.types && !s.types[info.type]) return info.type + " posts are off";
+    if (f.age && s.maxAgeHours && info.time && Date.now() - Date.parse(info.time) > s.maxAgeHours * 3600e3) return "too old";
+    if (f.replies && s.maxReplies && info.replies > s.maxReplies) return "too many replies";
     const hay = info.text + " " + info.handle;
-    if (rules.skipRe && rules.skipRe.test(hay)) return "skip words";
+    if (f.words && rules.skipRe && rules.skipRe.test(hay)) return "never-reply word";
     if (rules.fav.has(h)) return "";
-    if (rules.topicRe && !rules.topicRe.test(hay)) return "off topic";
+    if (f.topics && rules.topicRe && !rules.topicRe.test(hay)) return "off topic";
     return "";
   }
 
@@ -92,7 +93,7 @@
       skipRe: wordsRe(list(s.skipWords)),
       topicRe: wordsRe(topicWords.map(w => w.toLowerCase()))
     };
-    const found = [], seen = new Set(), skipped = {};
+    const found = [], seen = new Set(), skipped = {}, filtered = [];
     let stale = 0;
     for (let step = 0; step < 80 && found.length < n && collecting; step++) {
       let fresh = 0;
@@ -101,7 +102,11 @@
         if (!info || seen.has(info.id)) continue;
         seen.add(info.id); fresh++;
         const why = skipReason(info, s, rules);
-        if (why) { skipped[why] = (skipped[why] || 0) + 1; continue; }
+        if (why) {
+          skipped[why] = (skipped[why] || 0) + 1;
+          if (why !== "already in queue or done") filtered.push({ ...info, reason: why }); // shown in "Filtered out"
+          continue;
+        }
         found.push({ ...info, fav: rules.fav.has(info.handle.toLowerCase()) });
         if (found.length >= n) break;
       }
@@ -112,8 +117,13 @@
       await sleep(1300);
     }
     collecting = false;
-    found.sort((x, y) => (y.fav ? 1 : 0) - (x.fav ? 1 : 0)); // favourites first
+    if (s.favFirst) found.sort((x, y) => (y.fav ? 1 : 0) - (x.fav ? 1 : 0)); // favourites first
     const items = found.map(f => ({ ...f, source: "feed", actions: { ...s.defaultActions.feed } }));
+    if (filtered.length) {
+      const { apFiltered = [] } = await chrome.storage.local.get("apFiltered");
+      const keep = apFiltered.filter(x => !filtered.some(y => y.id === x.id));
+      await chrome.storage.local.set({ apFiltered: filtered.concat(keep).slice(0, 300) });
+    }
     await sendToQueue(items, true);
     return { added: items.length, skipped };
   }

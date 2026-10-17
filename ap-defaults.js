@@ -4,7 +4,10 @@ self.AP_DEFAULTS = {
   batchSize: 20,
   keepGoing: false,
 
-  // choosing posts
+  // choosing posts: filters only run when you turn them on
+  useFilters: false,
+  filters: { age: false, replies: false, words: false, accounts: false, topics: false, types: false, ads: true, own: true },
+  favFirst: true,
   topics: [],
   keywords: "",
   types: { text: true, image: true, video: true },
@@ -26,7 +29,9 @@ self.AP_DEFAULTS = {
     group: { reply: false, like: true, repost: true }
   },
 
-  // speed
+  // speed: "finish" = do the whole batch in finishMinutes, gaps vary post to post; "gap" = random gap + rests
+  paceMode: "finish",
+  finishMinutes: 10,
   minGap: 8,
   maxGap: 20,
   restEvery: 10,
@@ -44,6 +49,7 @@ self.AP_DEFAULTS = {
   writer: "gemini",
   reviewer: "claude",
   passScore: 6,
+  autoUntick: false, // off = every post comes ticked on the review screen; you decide
   bannedWords:
     "aesthetic, delve, elevate, game-changer, game changer, resonate, resonates, vibe check, testament, tapestry, captivating, " +
     "unleash, embark, realm, elevated, seamless, absolutely, great point, so true, couldn't agree more, spot on, well said, " +

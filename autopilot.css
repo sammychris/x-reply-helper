@@ -70,3 +70,13 @@ nav span { color: var(--dim); font-weight: 500; }
 .empty { color: var(--dim); text-align: center; padding: 40px 0; }
 
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } aside { position: static; max-height: none; border-right: 0; } }
+
+label.check.big { font-weight: 700; font-size: 14px; }
+#filterBox.off { opacity: .4; pointer-events: none; }
+#filterBox > label.check { margin-top: 12px; }
+input[type="radio"] { width: auto; margin: 0 6px 0 0; accent-color: var(--blue); }
+.sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.pace { margin-top: 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--dim); font-size: 13px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pace b { color: var(--text); }
+.pace input { width: 70px; margin: 0; padding: 4px 8px; }
+.pace .warnc { color: var(--amber); }

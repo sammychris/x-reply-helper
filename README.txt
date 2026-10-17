@@ -1,4 +1,4 @@
-SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.0.0
+SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.1.0
 
 WHAT IT DOES
 - Adds a "Reply ideas" button under every post on x.com.
@@ -80,3 +80,13 @@ Batches of 10-50 posts: it reads them, writes replies, you review the batch, the
 
 Everything it did is in the Done and Log tabs. Done posts are never queued again.
 Control center opens from the "Control center" button on x.com, or by itself when you add posts.
+
+CHANGES IN 2.1
+- Filters are OFF by default. "Use filters" turns them on, and each filter has its own switch
+  (age, replies, words, accounts, topics/keywords, post types, ads, your own posts). Only "already done" always applies.
+- "Filtered out" tab: every post a filter left out, with the reason and an "Add to queue" button.
+- Review: every post comes ticked. Weak ones only get unticked if you turn on "Untick weak replies for me" (AI section).
+- "Reply all / Like all / Repost all": tick or untick that action on every post in the list.
+  Turning Reply on for a post with no reply sends it back to the queue: press Write replies.
+- Speed: "Finish the batch in X minutes" (default 10). Every gap is different but the batch ends on time.
+  If the time is too short, it says the fastest possible time (about 5 s per post). Or use "Gap between posts".
