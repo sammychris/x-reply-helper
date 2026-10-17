@@ -38,7 +38,7 @@ function postContext(post, withImages) {
     (post.quoted ? `It quotes this other post:\n"""${post.quoted}"""\n` : "") +
     (post.grokReply ? `Grok's explanation (from the replies):\n${post.grokReply.slice(0, 1200)}\n` : "") +
     (post.replies && post.replies.length
-      ? `Replies other people already left (context only):\n` + post.replies.map((r, i) => `${i + 1}. ${r.slice(0, 280)}`).join("\n") + "\n"
+      ? `Replies other people already left (context only):\n` + post.replies.slice(0, 6).map((r, i) => `${i + 1}. ${r.slice(0, 200)}`).join("\n") + "\n"
       : "")
   );
 }

@@ -1,4 +1,4 @@
-SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.3.0
+SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.3.1
 
 WHAT IT DOES
 - Adds a "Reply ideas" button under every post on x.com.
@@ -121,3 +121,11 @@ CHANGES IN 2.3: reply styles
   "it's not X it's Y", too much punctuation and replies that are too long. Short and funny is never marked down.
 - If Grok's reply is among the replies read, it's passed to the writer as "Grok's explanation".
 - Gemini model unchanged: gemini-3.1-flash-lite (free tier).
+
+CHANGES IN 2.3.1: fewer Gemini calls
+- No Claude key: the reviewer is skipped (free local check only) instead of making a second Gemini call. 2 Gemini calls per post max.
+- Gemini writes one post at a time, not two at once.
+- "High demand" from Gemini: 3 tries with longer waits (8 s, 20 s) instead of 4 quick ones; two busy posts in a row pause writing
+  and keep the posts in the queue. Press Write replies again in a few minutes.
+- Context trimmed to 6 replies (200 characters each) so each request stays small.
+- "AI calls today" now counts every request, retries included.

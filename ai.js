@@ -32,6 +32,7 @@ async function claude(k, model, system, text, media, maxTokens) {
       : { type: "image", source: { type: "base64", media_type: m.data.slice(5, m.data.indexOf(";")), data: m.data.split(",")[1] } }
   );
   content.push({ type: "text", text });
+  countCall("claude");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     signal: AbortSignal.timeout(45000), // never wait forever on a stuck request
@@ -70,8 +71,10 @@ async function gemini(k, system, text, media, maxTokens) {
     generationConfig: { thinkingConfig: { thinkingLevel: "MINIMAL" }, temperature: 0.8, maxOutputTokens: Math.max(maxTokens, 1000) }
   });
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(k.geminiModel)}:generateContent`;
+  // When Gemini is busy, retrying fast only adds to the overload: try 3 times in total, waiting longer each time.
   let lastErr;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
+    countCall("gemini"); // every request counts, retries too
     const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(45000), headers: { "content-type": "application/json", "x-goog-api-key": k.geminiKey }, body }).catch(e => ({ ok: false, status: 0, json: async () => ({ error: { message: e.message } }) }));
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -82,7 +85,7 @@ async function gemini(k, system, text, media, maxTokens) {
       lastErr = new Error("Gemini: " + (data?.error?.message || `error ${res.status}`));
       if (![0, 429, 500, 503].includes(res.status)) throw lastErr;
     }
-    await new Promise(r => setTimeout(r, (res.status === 429 ? 6000 : 2000) * (i + 1))); // busy: wait and try again
+    if (i < 2) await new Promise(r => setTimeout(r, res.status === 429 ? [15000, 30000][i] : [8000, 20000][i])); // busy: wait, then try again
   }
   throw lastErr;
 }
@@ -109,7 +112,6 @@ async function run(pick, role, system, text, media, maxTokens) {
       const out = who === "claude"
         ? await claude(k, role === "reviewer" ? k.reviewerModel : k.model, system, text, media, maxTokens)
         : await gemini(k, system, text, media, maxTokens);
-      countCall(who);
       return { out, via: who === "claude" ? "Claude" : "Gemini" };
     } catch (e) {
       lastErr = e;
@@ -129,7 +131,8 @@ export function postContext(it) {
   if (it.desc) lines.push(`What's in the ${p.type === "video" ? "video" : "picture"}: ${it.desc}`);
   if (p.grokReply) lines.push(`Grok's explanation (from the replies):\n${p.grokReply.slice(0, 1200)}`);
   if (it.grok) lines.push(`Grok's explanation of the post:\n${it.grok}`);
-  if (p.replies?.length) lines.push("Replies other people already left (context only):\n" + p.replies.map((r, i) => `${i + 1}. ${r.slice(0, 280)}`).join("\n"));
+  // 6 replies, trimmed, are enough context and keep each request small
+  if (p.replies?.length) lines.push("Replies other people already left (context only):\n" + p.replies.slice(0, 6).map((r, i) => `${i + 1}. ${r.slice(0, 200)}`).join("\n"));
   return lines.join("\n");
 }
 
@@ -159,6 +162,9 @@ export async function write(it, ap, forceMode) {
 }
 
 export async function review(it, drafts, ap, mode) {
+  // No Claude key: skip the AI reviewer instead of spending another Gemini call (the free local check still runs).
+  // Same as the Reply ideas button. Pick Gemini as the reviewer in the control center if you want it anyway.
+  if (ap.reviewer !== "gemini" && !(await keys()).apiKey) return null;
   const task =
     `\n\nThese drafts are ${mode === "reaction" ? "REACTION" : "OPINION"} replies.\nBanned words for this account: ${ap.bannedWords}.\n\nDrafts:\n` + drafts.map((r, i) => `${i}. ${r}`).join("\n") +
     '\n\nAnswer with JSON only: {"scores": [n, n, n], "best": index, "notes": ["very short reason per draft"]}';

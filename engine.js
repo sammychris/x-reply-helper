@@ -228,8 +228,10 @@ async function writeAndPick(it, forceMode) {
   let scores = it.drafts.map(() => 7), notes = [];
   try {
     const r = await review(it, it.drafts, ap, it.mode);
-    scores = it.drafts.map((_, i) => r.scores[i] || 5); notes = r.notes;
-    it.via += " → " + r.via;
+    if (r) {
+      scores = it.drafts.map((_, i) => r.scores[i] || 5); notes = r.notes;
+      it.via += " → " + r.via;
+    } else it.via += " · local check only (no Claude key)";
   } catch (e) { it.warn.push("Reviewer unavailable: " + e.message); }
   it.issues = it.drafts.map(d => styleProblems(d, ap, it.mode)); // free check for AI-sounding writing
   scores = scores.map((s, i) => Math.max(1, s - 2 * it.issues[i].length));
@@ -249,12 +251,13 @@ function stopFor(e) {
   return "";
 }
 
+let busyStreak = 0;
 async function writeBatch() {
   if (busy) return;
   const items = queue.filter(i => i.status === "queued").slice(0, Number(ap.batchSize));
   if (!items.length) { setStatus("The queue is empty. Collect posts on X or paste links."); return; }
   paused = false; setBusy("writing");
-  const lim = limiter(2);
+  const lim = limiter(ap.writer === "gemini" ? 1 : 2); // Gemini one post at a time (free tier), Claude two
   const jobs = [];
   let n = 0;
   log(`Writing replies for ${items.length} posts`);
@@ -274,8 +277,16 @@ async function writeBatch() {
       if (ap.filters.own && it.handle.toLowerCase() === me()) { it.status = "skipped"; it.error = "Your own post"; touch(it); continue; }
       it.status = "writing"; touch(it);
       jobs.push(lim(async () => {
-        try { await think(it); it.status = "ready"; }
-        catch (e) { it.status = "failed"; it.error = e.message; log(`@${it.handle}: ${e.message}`, "e"); }
+        if (paused) { it.status = "queued"; touch(it); return; }
+        try { await think(it); it.status = "ready"; busyStreak = 0; }
+        catch (e) {
+          if (/high demand|overloaded|try again later|UNAVAILABLE/i.test(e.message)) {
+            // Google's servers are busy: put the post back and stop after two in a row, instead of hammering Gemini
+            it.status = "queued"; it.error = "Gemini was busy";
+            if (++busyStreak >= 2 && !paused) { paused = true; log("Gemini is busy on Google's side. Paused writing.", "e"); }
+          } else { it.status = "failed"; it.error = e.message; }
+          log(`@${it.handle}: ${e.message}`, "e");
+        }
         touch(it);
       }));
     } catch (e) {
@@ -289,6 +300,7 @@ async function writeBatch() {
   setStatus("Finishing the replies…");
   await Promise.all(jobs);
   setBusy("");
+  if (busyStreak >= 2) { busyStreak = 0; return setStatus("Gemini is busy right now (that's on Google's side). Paused. Press Write replies again in a few minutes; posts not written yet are still in the queue."); }
   const rd = queue.filter(i => i.status === "ready");
   log(`Batch written: ${rd.filter(i => i.include).length} ticked, ${rd.filter(i => !i.include).length} unticked`, "ok");
   setStatus(paused ? "Paused." : "Ready to review. Untick or edit anything, then press Continue.");
