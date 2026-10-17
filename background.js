@@ -179,7 +179,20 @@ async function draftAndReview(post, withImages) {
   return out;
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// ---------- Autopilot control center ----------
+async function openAutopilot(focus) {
+  const url = chrome.runtime.getURL("autopilot.html");
+  const [page] = await chrome.runtime.getContexts({ contextTypes: ["TAB"], documentUrls: [url] });
+  if (!page) return chrome.tabs.create({ url, active: true });
+  if (focus) {
+    await chrome.tabs.update(page.tabId, { active: true });
+    if (page.windowId >= 0) await chrome.windows.update(page.windowId, { focused: true });
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "apOpen") { openAutopilot(msg.focus).finally(() => sendResponse({ ok: true })); return true; }
+  if (msg.type === "apCollector") { if (sender.tab) chrome.storage.local.set({ apCollectorTab: sender.tab.id }); return; }
   if (msg.type === "draft") {
     (async () => {
       try {

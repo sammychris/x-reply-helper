@@ -1,4 +1,4 @@
-SAMMY'S REPLY HELPER FOR X  (Chrome extension, Windows PC)
+SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.0.0
 
 WHAT IT DOES
 - Adds a "Reply ideas" button under every post on x.com.
@@ -48,3 +48,35 @@ IMAGES ON/OFF
 TIPS
 - Edit the "Your voice" box in Settings to sound more like you.
 - If X changes its page and the button disappears, tell Claude: the fix is usually one line.
+
+
+AUTOPILOT (new in 2.0)
+Batches of 10-50 posts: it reads them, writes replies, you review the batch, then it posts them for you.
+
+1. FILL THE QUEUE (any mix):
+   - "🤖 Collect" (bottom left on x.com): scrolls the page you're on (home feed, a search, a list) and picks posts
+     that pass your filters: topics, keywords, text/image/video, max age, max replies, skip words/accounts.
+     Favourites always go first. Your own posts, ads and posts already done are skipped.
+   - ➕ next to the Like button on any post: adds that post by hand.
+   - Control center > "Add links": paste any number of X post links (or import a .txt).
+   - In a group chat: "📍 Set start point", click the first message to start from, then "🔗 Grab new links".
+     Next time it only grabs links posted since the last grab.
+   Each post has Reply / Like / Repost boxes. Defaults per source are in "Default actions"
+   (chat links default to Like + Repost, no reply).
+
+2. "Write replies": a small working window opens and visits each post (keep it open, don't minimise it).
+   It reads the post, up to 10 replies, picture descriptions and a few video frames.
+   Pictures are described ONCE by the "reader" AI (small size), then the writer and reviewer only get text.
+   Gemini writes 3 replies, Claude scores them and picks the most natural one. A free check also marks down
+   dashes, semicolons, hashtags, emoji spam and your "words that sound like AI" list.
+   Optional: ask Grok on videos it still doesn't understand (experimental, capped per day).
+
+3. REVIEW: each post shows the chosen reply (edit it), the other drafts (click to swap) and a score.
+   Low scores, "skip" suggestions and posts it didn't understand come UNTICKED with a warning.
+
+4. "Continue": posts the ticked ones one by one: random gap (default 8-20 sec), a rest after every 10
+   (default 3 min). If X shows an error it rests 10 min and slows down; a second error pauses everything.
+   Turn on "Keep going" to collect and write the next batch automatically after posting (you still review).
+
+Everything it did is in the Done and Log tabs. Done posts are never queued again.
+Control center opens from the "Control center" button on x.com, or by itself when you add posts.

@@ -1,19 +1,39 @@
 {
   "manifest_version": 3,
-  "name": "Sammy's Reply Helper & Post Picker for X",
-  "version": "1.5.0",
-  "description": "Reads a post (text and images) and drafts reply ideas in your voice. You pick, edit and press Reply yourself.",
-  "permissions": ["storage"],
-  "host_permissions": ["https://api.anthropic.com/*", "https://generativelanguage.googleapis.com/*", "https://pbs.twimg.com/*"],
-  "background": { "service_worker": "background.js" },
+  "name": "Sammy's Reply Helper, Autopilot & Post Picker for X",
+  "version": "2.0.0",
+  "description": "Autopilot collects posts, reads them, drafts replies (one AI writes, another picks) and, after you review each batch, likes / reposts / replies with natural gaps.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://pbs.twimg.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["https://x.com/*", "https://twitter.com/*"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "content.js",
+        "ap-defaults.js",
+        "ap-content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
   "options_page": "options.html",
-  "action": { "default_title": "Reply Helper settings" }
+  "action": {
+    "default_title": "Reply Helper settings"
+  },
+  "minimum_chrome_version": "116"
 }

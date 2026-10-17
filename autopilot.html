@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Autopilot</title>
+<link rel="stylesheet" href="autopilot.css">
+</head><body>
+<header>
+  <div class="brand">🤖 Autopilot <span id="count" class="pill"></span></div>
+  <div id="status" class="status">Idle</div>
+  <div class="actions">
+    <button id="collectBtn" class="ghost" title="Collect more posts from the X tab you last collected from">Collect more</button>
+    <button id="writeBtn">Write replies</button>
+    <button id="postBtn" class="go">Continue</button>
+    <button id="pauseBtn" class="ghost">Pause</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside id="side">
+    <section>
+      <h3>Add links</h3>
+      <textarea id="links" placeholder="Paste X post links, one per line (or any text with links in it)"></textarea>
+      <div class="row acts" id="linkActs"></div>
+      <div class="row"><button id="addLinks">Add to queue</button><label class="file">Import .txt<input id="linkFile" type="file" accept=".txt,.csv"></label></div>
+    </section>
+
+    <section>
+      <h3>Batch</h3>
+      <label>Posts per batch <select data-k="batchSize"><option>10</option><option>20</option><option>30</option><option>40</option><option>50</option></select></label>
+      <label class="check"><input type="checkbox" data-k="keepGoing"> Keep going: after posting, collect and write the next batch</label>
+    </section>
+
+    <details open>
+      <summary>Choosing posts</summary>
+      <div id="topics" class="chips"></div>
+      <label>Other keywords (comma separated) <input data-k="keywords" placeholder="e.g. a24, anime, blender"></label>
+      <div class="row">
+        <label class="check"><input type="checkbox" data-k="types.text"> Text</label>
+        <label class="check"><input type="checkbox" data-k="types.image"> Image</label>
+        <label class="check"><input type="checkbox" data-k="types.video"> Video</label>
+      </div>
+      <div class="row two">
+        <label>Max age (hours) <input type="number" min="0" data-k="maxAgeHours"></label>
+        <label>Max replies on post <input type="number" min="0" data-k="maxReplies"></label>
+      </div>
+      <label>Never reply when a post has these words <textarea data-k="skipWords" rows="3"></textarea></label>
+      <label>Skip these accounts <input data-k="skipAccounts" placeholder="@name, @name"></label>
+      <label>Favourites (always first) <input data-k="favAccounts" placeholder="@name, @name"></label>
+      <label>Your handle <input data-k="myHandle"></label>
+      <p class="hint">Topics and keywords only apply to Collect. Leave them empty to take any post that passes the other filters.</p>
+    </details>
+
+    <details>
+      <summary>Default actions</summary>
+      <div id="defaults"></div>
+    </details>
+
+    <details>
+      <summary>Speed</summary>
+      <div class="row two">
+        <label>Gap from (sec) <input type="number" min="2" data-k="minGap"></label>
+        <label>to (sec) <input type="number" min="2" data-k="maxGap"></label>
+      </div>
+      <div class="row two">
+        <label>Rest after every <input type="number" min="1" data-k="restEvery"></label>
+        <label>Rest for (min) <input type="number" min="0" step="0.5" data-k="restMinutes"></label>
+      </div>
+      <p class="hint">If X shows an error, Autopilot rests 10 minutes and doubles the gap. A second error pauses it.</p>
+    </details>
+
+    <details>
+      <summary>Reading posts</summary>
+      <label class="check"><input type="checkbox" data-k="readReplies"> Read up to 10 replies on each post</label>
+      <label class="check"><input type="checkbox" data-k="images"> Look at pictures (described once, small size)</label>
+      <label class="check"><input type="checkbox" data-k="videoFrames"> Grab a few frames from videos</label>
+      <label class="check"><input type="checkbox" data-k="grok"> Ask Grok when a video still isn't clear (experimental)</label>
+      <label>Grok uses per day <input type="number" min="0" data-k="grokPerDay"></label>
+    </details>
+
+    <details>
+      <summary>AI</summary>
+      <label>Reads pictures <select data-k="reader"><option value="gemini">Gemini</option><option value="claude">Claude</option></select></label>
+      <label>Writes replies <select data-k="writer"><option value="gemini">Gemini</option><option value="claude">Claude</option></select></label>
+      <label>Reviews and picks <select data-k="reviewer"><option value="claude">Claude</option><option value="gemini">Gemini</option></select></label>
+      <label>Tick replies scoring at least <input type="number" min="1" max="10" data-k="passScore"></label>
+      <label>Words that sound like AI (never use) <textarea data-k="bannedWords" rows="4"></textarea></label>
+      <p class="hint">API keys and your voice are on the <a href="options.html" target="_blank">Settings page</a>. If one AI has no key or fails, the other one is used.</p>
+    </details>
+  </aside>
+
+  <main>
+    <nav id="tabs">
+      <button data-tab="review" class="on">Review <span></span></button>
+      <button data-tab="queue">Queue <span></span></button>
+      <button data-tab="done">Done <span></span></button>
+      <button data-tab="log">Log</button>
+    </nav>
+    <div id="bulk" class="row bulk">
+      <button id="tickAll" class="ghost">Tick all</button>
+      <button id="untickAll" class="ghost">Untick all</button>
+      <button id="clearDone" class="ghost">Clear finished</button>
+      <button id="clearQueue" class="ghost">Empty queue</button>
+    </div>
+    <div id="list"></div>
+    <div id="log" hidden></div>
+    <p id="empty" class="empty"></p>
+  </main>
+</div>
+<script src="ap-defaults.js"></script>
+<script type="module" src="autopilot.js"></script>
+</body></html>
