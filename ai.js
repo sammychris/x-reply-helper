@@ -83,7 +83,7 @@ async function gemini(k, system, text, media, maxTokens) {
       else lastErr = new Error("Gemini sent an empty answer.");
     } else {
       lastErr = new Error("Gemini: " + (data?.error?.message || `error ${res.status}`));
-      if (![0, 429, 500, 503].includes(res.status)) throw lastErr;
+      if (![0, 429, 500, 503].includes(res.status)) throw lastErr; // wrong key / bad request: never retried
     }
     if (i < 2) await new Promise(r => setTimeout(r, res.status === 429 ? [15000, 30000][i] : [8000, 20000][i])); // busy: wait, then try again
   }

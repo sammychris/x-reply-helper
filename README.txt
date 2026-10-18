@@ -1,4 +1,4 @@
-SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.3.2
+SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.3.3
 
 WHAT IT DOES
 - Adds a "Reply ideas" button under every post on x.com.
@@ -131,3 +131,7 @@ CHANGES IN 2.3.1: fewer Gemini calls
 CHANGES IN 2.3.2
 - ✨ Reply ideas on a post: one AI call, 3 replies, no AI reviewer (you review it yourself). The free local check
   just puts the most human-sounding one first. The AI reviewer is only used in Autopilot batches.
+
+CHANGES IN 2.3.3
+- Clicking ✨ Reply ideas (or New ideas) again while it's still writing no longer sends another AI call.
+- A wrong key or bad request fails after 1 call instead of retrying 3 times. Only "busy" errors are retried.

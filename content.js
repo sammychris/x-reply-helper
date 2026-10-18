@@ -99,10 +99,14 @@
     panel.textContent = "Reading the post…";
     anchor.after(panel);
 
+    let running = false;
     const run = () => {
+      if (running) return; // one AI call at a time per post
+      running = true;
       panel.textContent = "Reading the post…";
       const post = readPost(article);
       chrome.runtime.sendMessage({ type: "draft", post }, res => {
+        running = false;
         done();
         panel.textContent = "";
         if (!res?.ok) { panel.textContent = res?.error || "Something went wrong."; return; }
@@ -243,7 +247,12 @@
     const btn = document.createElement("button");
     btn.className = "srh-btn";
     btn.textContent = "✨ Reply ideas";
-    btn.onclick = e => { e.preventDefault(); e.stopPropagation(); showPanel(article, bar); };
+    btn.onclick = async e => {
+      e.preventDefault(); e.stopPropagation();
+      if (btn.dataset.busy) return; // already writing: a second click doesn't send another AI call
+      btn.dataset.busy = "1";
+      try { await showPanel(article, bar); } finally { delete btn.dataset.busy; }
+    };
     bar.appendChild(btn);
   }
 

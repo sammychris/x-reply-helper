@@ -104,7 +104,9 @@ async function askGemini(s, system, images, text, maxTokens) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         lastErr = new Error("Gemini: " + (data?.error?.message || `error ${res.status}`));
-        if ([429, 500, 503].includes(res.status) && i < 2) { await new Promise(r => setTimeout(r, 2000 * (i + 1))); continue; }
+        // only "busy" errors are worth retrying; a wrong key or bad request fails the same way every time
+        if (![429, 500, 503].includes(res.status)) { lastErr.final = true; throw lastErr; }
+        if (i < 2) { await new Promise(r => setTimeout(r, 2000 * (i + 1))); continue; }
         throw lastErr;
       }
       const out = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
@@ -112,6 +114,7 @@ async function askGemini(s, system, images, text, maxTokens) {
       return parseJSON(out);
     } catch (e) {
       lastErr = e;
+      if (e.final) break;
       if (i < 2) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
     }
   }
