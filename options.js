@@ -3,11 +3,10 @@ const DEFAULTS = { provider: "auto", model: "claude-haiku-5-5", geminiModel: "ge
 chrome.storage.sync.get([...KEYS, "reviewer", "sendImages"]).then(v => {
   document.getElementById("sendImages").checked = v.sendImages !== false;
   KEYS.forEach(k => { document.getElementById(k).value = v[k] ?? DEFAULTS[k] ?? ""; });
-  document.getElementById("reviewer").checked = v.reviewer !== false;
   if (!v.voice) document.getElementById("voice").placeholder = "Leave empty to use the built-in Sammy voice.";
 });
 document.getElementById("save").onclick = async () => {
-  const v = { reviewer: document.getElementById("reviewer").checked, sendImages: document.getElementById("sendImages").checked };
+  const v = { sendImages: document.getElementById("sendImages").checked };
   KEYS.forEach(k => { const val = document.getElementById(k).value.trim(); if (val) v[k] = k === "goal" ? Number(val) : val; });
   await chrome.storage.sync.set(v);
   document.getElementById("s").textContent = "Saved";

@@ -1,5 +1,5 @@
 import { command, isWorker, ready, drainInbox } from "./engine.js";
-import { writerPrompt, writerTask, REVIEWER, styleProblems, DEFAULT_VOICE } from "./prompts.js";
+import { writerPrompt, writerTask, styleProblems, DEFAULT_VOICE } from "./prompts.js";
 ready.then(drainInbox);
 
 // Reads a post (text + images) and asks an AI for reply ideas.
@@ -152,33 +152,15 @@ async function write(post, withImages) {
   return { mode, skip: !!parsed.skip, reason: parsed.reason || "", replies: (parsed.replies || []).map(String).slice(0, 3) };
 }
 
-// AI 2: a separate reviewer (rules in prompts.js) checks each draft against the post.
-async function review(post, withImages, replies, mode) {
-  const task =
-    `\nThese drafts are ${mode === "reaction" ? "REACTION" : "OPINION"} replies.\nDrafts:\n` + replies.map((r, i) => `${i}. ${r}`).join("\n") +
-    '\n\nAnswer with JSON only: {"scores": [n, n, n], "best": index, "notes": ["very short reason per draft", ...]}';
-  const r = await ask("reviewer", REVIEWER, post, withImages, task, 400);
-  return { scores: r.scores || [], best: Number.isInteger(r.best) ? r.best : 0, notes: r.notes || [] };
-}
-
+// ✨ Reply ideas on a post: ONE AI call that returns 3 replies. No AI reviewer here: you're the reviewer.
+// The free local check (no AI, instant) only puts the most human-sounding reply first.
 async function draftAndReview(post, withImages) {
-  const s = await settings();
   const out = await write(post, withImages);
-  const usedGemini = lastUsed.startsWith("Gemini");
-  if (s.reviewer && out.replies.length && !(usedGemini && !s.reviewWithGemini)) {
-    try { out.review = await review(post, withImages, out.replies, out.mode); }
-    catch (e) { out.note = "Reviewer unavailable: " + e.message; }
-  }
   out.via = lastUsed;
-  // free local check for AI-sounding writing: each problem costs 2 points
-  if (out.replies.length) {
+  if (out.replies.length > 1) {
     const { bannedWords } = await apPrefs();
-    const issues = out.replies.map(r => styleProblems(r, bannedWords, out.mode));
-    const rv = out.review || { scores: out.replies.map(() => 7), notes: [] };
-    rv.scores = out.replies.map((_, i) => Math.max(1, (rv.scores[i] || 5) - 2 * issues[i].length));
-    rv.notes = out.replies.map((_, i) => [rv.notes[i], issues[i].length ? "check: " + issues[i].join(", ") : ""].filter(Boolean).join(" · "));
-    rv.best = rv.scores.indexOf(Math.max(...rv.scores));
-    out.review = rv;
+    const issues = new Map(out.replies.map(r => [r, styleProblems(r, bannedWords, out.mode).length]));
+    out.replies = [...out.replies].sort((a, b) => issues.get(a) - issues.get(b));
   }
   return out;
 }

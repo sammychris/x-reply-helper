@@ -1,12 +1,10 @@
-SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.3.1
+SAMMY'S REPLY HELPER + AUTOPILOT FOR X  (Chrome extension, Windows PC)  v2.3.2
 
 WHAT IT DOES
 - Adds a "Reply ideas" button under every post on x.com.
 - Click it: it reads the post's text and images, then shows 3 reply ideas in your voice.
 - You can edit an idea right in the box, then press "Use": it opens X's reply box and types it in.
 - YOU press X's Reply button. Nothing is ever posted on its own.
-- A second AI (the reviewer) checks the 3 drafts against the post, scores them, puts the best on top
-  and greys out any that misread the post or are too generic. Turn it off in Settings to save money.
 - Bottom-left badge counts the replies you sent today against your goal.
 - "Draft next 10" (bottom left) drafts ideas for the next 10 posts in your feed at once. Then just go down: Use > Reply.
 - Open a post on its own page to get better ideas: it also reads up to 10 replies people left, to understand the context and video.
@@ -129,3 +127,7 @@ CHANGES IN 2.3.1: fewer Gemini calls
   and keep the posts in the queue. Press Write replies again in a few minutes.
 - Context trimmed to 6 replies (200 characters each) so each request stays small.
 - "AI calls today" now counts every request, retries included.
+
+CHANGES IN 2.3.2
+- ✨ Reply ideas on a post: one AI call, 3 replies, no AI reviewer (you review it yourself). The free local check
+  just puts the most human-sounding one first. The AI reviewer is only used in Autopilot batches.
